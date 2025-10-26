@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 # No need to import get_mysql_connection or close_connection directly in the GUI anymore
 from gui.session_manager import SessionManager
+from gui.gui_signals import global_signals
 from database.services.movie_service import MovieService
 from database.services.rating_service import RatingService # Updated to use the new combined method
 # from database.services.review_service import ReviewService #fetching list of review+rating from RatingService
@@ -33,6 +34,17 @@ class ProfileWindow(QWidget):
         self.setGeometry(200, 200, 800, 600)
 
         self.init_ui()
+        # Connect to the global signal to reload data when a movie's rating/review changes
+        global_signals.movie_data_updated.connect(self.on_movie_data_updated)
+        self.load_profile_data()
+
+    def on_movie_data_updated(self, tmdb_id):
+        """Reloads the profile data if the updated movie is relevant to the currently viewed profile."""
+        print(f"DEBUG: ProfileWindow.on_movie_data_updated: Received signal for tmdbID {tmdb_id}. Reloading data for selected user ID {self.selected_user_id}.")
+        # Note: This reloads the *entire* profile list for the *selected* user.
+        # A more granular update (e.g., only refreshing the item for tmdb_id if it exists)
+        # is possible but more complex. Reloading the full list is simpler and ensures consistency.
+        print(f"DEBUG: ProfileWindow.on_movie_data_updated: Received signal for tmdbID {tmdb_id}. Reloading data for selected user ID {self.selected_user_id}.")
         self.load_profile_data()
 
     # Debug showEvent
@@ -43,10 +55,18 @@ class ProfileWindow(QWidget):
         self.load_profile_data()
         super().showEvent(event) # Call the parent class's showEvent
 
-    # NEW: Debug closeEvent
+    # Debug closeEvent
     def closeEvent(self, event):
         print("DEBUG: ProfileWindow.closeEvent called - Window is about to close.")
-        event.accept() # Accept the close event, allowing the window to close
+        # Disconnect the signal when the window closes to prevent potential errors
+        # if the signal is emitted after this window is destroyed
+        try:
+            global_signals.movie_data_updated.disconnect(self.on_movie_data_updated)
+            print("DEBUG: ProfileWindow.closeEvent: Disconnected movie_data_updated signal.")
+        except TypeError:
+            # This exception is raised if the signal was not connected or already disconnected
+            print("DEBUG: ProfileWindow.closeEvent: Signal was already disconnected or not connected.")
+        event.accept()
 
     def init_ui(self):
         main_layout = QVBoxLayout()

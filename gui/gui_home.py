@@ -9,6 +9,7 @@ from PyQt5.QtGui import QPixmap, QIcon
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 import sys
 from gui.session_manager import SessionManager
+from gui.gui_signals import global_signals
 from database.services.movie_service import MovieService
 from gui.gui_movie_detail import MovieDetailWindow
 from gui.gui_profile import ProfileWindow
@@ -33,8 +34,23 @@ class HomeWindow(QWidget):
         # Initialize the Network Access Manager for async image loading
         self.network_manager = QNetworkAccessManager()
         self.profile_window_ref = None
+        global_signals.movie_data_updated.connect(self.on_movie_data_updated)
         self.init_ui()
         self.load_movies_page(self.current_page)
+
+    # Slot to handle the signal
+    def on_movie_data_updated(self, tmdb_id):
+        """Reloads the current page of movies or search results if the updated movie is visible."""
+        print(f"DEBUG: HomeWindow.on_movie_data_updated: Received signal for tmdbID {tmdb_id}.")
+        # Check if we are currently showing paginated movies or search results
+        if self.search_mode and self.current_search_term:
+            # If in search mode, reload the search results
+            print(f"DEBUG: HomeWindow.on_movie_data_updated: Reloading search results for '{self.current_search_term}'.")
+            self.load_search_results(self.current_search_term)
+        else:
+            # If in pagination mode, reload the current page
+            print(f"DEBUG: HomeWindow.on_movie_data_updated: Reloading current page {self.current_page}.")
+            self.load_movies_page(self.current_page) # This will fetch the updated average ratings
 
     def init_ui(self):
         main_layout = QVBoxLayout()

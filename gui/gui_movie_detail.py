@@ -8,6 +8,7 @@ from PyQt5.QtCore import Qt, QUrl
 from PyQt5.QtGui import QPixmap, QIcon
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from gui.session_manager import SessionManager
+from gui.gui_signals import global_signals #for global signal to refresh other pages
 from database.services.movie_service import MovieService
 from database.services.rating_service import RatingService
 from database.services.review_service import ReviewService
@@ -392,7 +393,6 @@ class MovieDetailWindow(QWidget):
     #         poster_label.setText("No Poster")
 
     def submit_rating_review(self):
-        """Handles submitting the user's rating and/or review."""
         # print("DEBUG: MovieDetailWindow.submit_rating_review() called")
         if not self.session_manager.is_logged_in():
             # print("DEBUG: MovieDetailWindow.submit_rating_review(): User not logged in.")
@@ -409,9 +409,9 @@ class MovieDetailWindow(QWidget):
 
         # At least one action (rating or review) must be provided
         if rating_value is None and not review_text:
-             # print("DEBUG: MovieDetailWindow.submit_rating_review(): No rating or review provided.")
-             QMessageBox.warning(self, 'No Input', 'Please provide a rating or a review.')
-             return
+            # print("DEBUG: MovieDetailWindow.submit_rating_review(): No rating or review provided.")
+            QMessageBox.warning(self, 'No Input', 'Please provide a rating or a review.')
+            return
 
         success = True
         message_parts = []
@@ -422,19 +422,33 @@ class MovieDetailWindow(QWidget):
             # Pass the float rating_value directly
             rating_result = self.rating_service.add_rating(user_id, self.tmdb_id, rating_value)
             # print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Rating service result: {rating_result}")
-            success &= rating_result["success"]
-            message_parts.append(f"Rating: {rating_result['message']}")
+
+            if rating_result['success']:
+                message_parts.append("Rating submitted successfully.")
+                print(f"DEBUG: MovieDetailWindow.submit_rating_review: Emitting movie_data_updated signal for tmdbID {self.tmdb_id}")
+                # Emit signal indicating movie data changed
+                global_signals.movie_data_updated.emit(self.tmdb_id)
+            else:
+                success = False
+                message_parts.append(rating_result['message'])
 
         # Submit Review if provided
         if review_text:
-            #print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Attempting to submit review: {review_text[:50]}...") # Print first 50 chars
+            # print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Attempting to submit review: {review_text[:50]}...") # Print first 50 chars
             review_result = self.review_service.add_review(user_id, self.tmdb_id, review_text)
-            #print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Review service result: {review_result}")
-            success &= review_result["success"]
-            message_parts.append(f"Review: {review_result['message']}")
+            # print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Review service result: {review_result}")
+
+            if review_result['success']:
+                message_parts.append("Review submitted successfully.")
+                # Emit signal indicating movie data changed (even if only review changed)
+                print(f"DEBUG: MovieDetailWindow.submit_rating_review: Emitting movie_data_updated signal for tmdbID {self.tmdb_id} (Review)")
+                global_signals.movie_data_updated.emit(self.tmdb_id)
+            else:
+                success = False
+                message_parts.append(review_result['message'])
 
         if success:
-            #print("DEBUG: MovieDetailWindow.submit_rating_review(): All submissions successful.")
+            # print("DEBUG: MovieDetailWindow.submit_rating_review(): All submissions successful.")
             QMessageBox.information(self, 'Success', " ".join(message_parts))
             # Reload movie details to show updated average rating and review count
             self.load_movie_details()
@@ -449,9 +463,9 @@ class MovieDetailWindow(QWidget):
             if review_text:
                 self.review_text_input.clear()
         else:
-            #print("DEBUG: MovieDetailWindow.submit_rating_review(): Some submissions failed.")
+            # print("DEBUG: MovieDetailWindow.submit_rating_review(): Some submissions failed.")
             QMessageBox.critical(self, 'Error', " ".join(message_parts))
-        #print("DEBUG: MovieDetailWindow.submit_rating_review(): Finished.")
+        # print("DEBUG: MovieDetailWindow.submit_rating_review(): Finished.")
 
 # Example for standalone testing (usually called from gui_home.py)
 # if __name__ == '__main__':
