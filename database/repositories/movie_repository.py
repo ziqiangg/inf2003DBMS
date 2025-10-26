@@ -1,7 +1,7 @@
 # database/repositories/movie_repository.py
 
 from database.db_connection import get_mysql_connection, close_connection
-from database.sql_queries import GET_MOVIES_PAGINATED, COUNT_ALL_MOVIES, GET_MOVIE_BY_ID
+from database.sql_queries import GET_MOVIES_PAGINATED, COUNT_ALL_MOVIES, GET_MOVIE_BY_ID, SEARCH_MOVIES_BY_TITLE
 
 class MovieRepository:
     def __init__(self):
@@ -58,6 +58,27 @@ class MovieRepository:
         finally:
             cursor.close()
             close_connection(connection)
+
+    def search_movies_by_title(self, search_term):
+        """Fetches movies matching the search term in the title."""
+        connection = get_mysql_connection()
+        if not connection:
+            return []
+        cursor = connection.cursor(dictionary=True)
+        try:
+            # Use % to match any title containing the search_term
+            search_pattern = f"%{search_term}%"
+            cursor.execute(SEARCH_MOVIES_BY_TITLE, (search_pattern,))
+            movies = cursor.fetchall()
+            return movies
+        except Exception as e:
+            print(f"Error searching movies by title: {e}")
+            return []
+        finally:
+            cursor.close()
+            close_connection(connection)
+
+    
 
 # Example usage (optional, for testing):
 # if __name__ == "__main__":

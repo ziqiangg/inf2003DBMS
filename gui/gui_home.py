@@ -2,7 +2,7 @@
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
-    QGridLayout, QMessageBox, QFrame, QTextEdit, QSizePolicy, QSpacerItem
+    QGridLayout, QMessageBox, QFrame, QTextEdit, QSizePolicy, QSpacerItem, QLineEdit
 )
 from PyQt5.QtCore import Qt, QUrl # Added QUrl for potential link handling
 from PyQt5.QtGui import QPixmap, QIcon
@@ -25,6 +25,9 @@ class HomeWindow(QWidget):
         self.current_page = 1
         self.movies_per_page = 20
         self.max_pages = 10
+        # Track if we are in search mode
+        self.search_mode = False
+        self.current_search_term = ""
         # Initialize the Network Access Manager for async image loading
         self.network_manager = QNetworkAccessManager()
         self.init_ui()
@@ -55,13 +58,20 @@ class HomeWindow(QWidget):
 
         main_layout.addLayout(top_bar_layout)
 
-        # --- Search Bar (Optional for now, can be added later) ---
-        # search_layout = QHBoxLayout()
-        # self.search_input = QLineEdit()
-        # search_button = QPushButton("Search")
-        # search_layout.addWidget(self.search_input)
-        # search_layout.addWidget(search_button)
-        # main_layout.addLayout(search_layout)
+        # --- Search Bar ---
+        search_layout = QHBoxLayout()
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search movies by title...") # Optional: Add placeholder text
+        search_button = QPushButton("Search")
+        clear_search_button = QPushButton("Clear") # Add a clear button
+
+        search_button.clicked.connect(self.perform_search)
+        clear_search_button.clicked.connect(self.clear_search)
+
+        search_layout.addWidget(self.search_input)
+        search_layout.addWidget(search_button)
+        search_layout.addWidget(clear_search_button) # Add the clear button
+        main_layout.addLayout(search_layout)
 
         # --- Movie Grid Area ---
         self.scroll_area = QScrollArea()
@@ -72,19 +82,21 @@ class HomeWindow(QWidget):
         main_layout.addWidget(self.scroll_area)
 
         # --- Pagination Controls (Arrows only) ---
-        pagination_layout = QHBoxLayout()
+        self.pagination_layout = QHBoxLayout() # Store as instance variable
         self.prev_button = QPushButton("Previous")
         self.prev_button.clicked.connect(lambda: self.change_page(self.current_page - 1))
         self.page_label = QLabel("Page 1") # This will be updated
         self.next_button = QPushButton("Next")
         self.next_button.clicked.connect(lambda: self.change_page(self.current_page + 1))
 
-        pagination_layout.addStretch() # Push controls to the center
-        pagination_layout.addWidget(self.prev_button)
-        pagination_layout.addWidget(self.page_label)
-        pagination_layout.addWidget(self.next_button)
-        pagination_layout.addStretch()
-        main_layout.addLayout(pagination_layout)
+        self.pagination_layout.addStretch() # Push controls to the center
+        self.pagination_layout.addWidget(self.prev_button)
+        self.pagination_layout.addWidget(self.page_label)
+        self.pagination_layout.addWidget(self.next_button)
+        self.pagination_layout.addStretch()
+        main_layout.addLayout(self.pagination_layout)
+        # Show/hide based on search mode initially (default is pagination)
+        self.update_pagination_visibility()
 
         # --- REMOVED: Dynamic Page Number Buttons (1, 2, 3, ...) ---
         # self.page_buttons_layout = QHBoxLayout()
@@ -92,6 +104,70 @@ class HomeWindow(QWidget):
         # main_layout.addLayout(self.page_buttons_layout) (REMOVED)
 
         self.setLayout(main_layout)
+    
+    def perform_search(self):
+        """Handles the search button click."""
+        search_term = self.search_input.text().strip()
+        if search_term:
+            print(f"DEBUG: Performing search for: '{search_term}'")
+            self.current_search_term = search_term
+            self.search_mode = True
+            self.current_page = 1 # Reset to first page for search results
+            self.load_search_results(search_term)
+            self.update_pagination_visibility() # Hide pagination controls during search
+        else:
+            # If search term is empty, clear the search results
+            self.clear_search()
+
+    def clear_search(self):
+        """Clears the search input and results, returning to pagination mode."""
+        print("DEBUG: Clearing search")
+        self.search_input.clear()
+        self.current_search_term = ""
+        self.search_mode = False
+        self.current_page = 1 # Reset to first page for pagination
+        self.load_movies_page(self.current_page) # Reload paginated movies
+        self.update_pagination_visibility() # Show pagination controls again
+
+    def update_pagination_visibility(self):
+        """Shows or hides pagination controls based on search mode."""
+        if self.search_mode:
+            self.pagination_layout.setContentsMargins(0, 0, 0, 0) # Remove margins when hidden
+            self.prev_button.hide()
+            self.page_label.hide()
+            self.next_button.hide()
+        else:
+            self.prev_button.show()
+            self.page_label.show()
+            self.next_button.show()
+
+    def load_search_results(self, search_term):
+        """Fetches search results and updates the UI."""
+        results = self.movie_service.search_movies_by_title(search_term)
+        print(f"DEBUG: Found {len(results)} results for search term '{search_term}'")
+
+        # Clear existing movie widgets from the grid layout
+        while self.movie_grid_layout.count():
+            child = self.movie_grid_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        # Populate the grid with search results
+        if results:
+            row, col = 0, 0
+            for movie in results:
+                movie_widget = self.create_movie_widget(movie)
+                self.movie_grid_layout.addWidget(movie_widget, row, col)
+                col += 1
+                if col > 3: # Show 4 movies per row
+                    col = 0
+                    row += 1
+        else:
+            # Show a message if no results found
+            no_results_label = QLabel("No movies found matching your search.")
+            no_results_label.setAlignment(Qt.AlignCenter)
+            # Optionally set a fixed size or use a spacer to center it better
+            self.movie_grid_layout.addWidget(no_results_label, 0, 0, 1, 4) # Span 4 columns
 
     def load_movies_page(self, page_number):
         """Fetches movies for the given page and updates the UI."""
@@ -122,9 +198,10 @@ class HomeWindow(QWidget):
                 row += 1
 
         # Update pagination controls
-        self.page_label.setText(f"Page {self.current_page} of {result['total_pages']}")
-        self.prev_button.setEnabled(result['has_prev'])
-        self.next_button.setEnabled(result['has_next'])
+        if not self.search_mode:
+            self.page_label.setText(f"Page {self.current_page} of {result['total_pages']}")
+            self.prev_button.setEnabled(result['has_prev'])
+            self.next_button.setEnabled(result['has_next'])
 
     def create_movie_widget(self, movie_data):
         """Creates a QWidget representing a single movie."""
@@ -265,8 +342,9 @@ class HomeWindow(QWidget):
 
     def change_page(self, new_page):
         """Changes the displayed movie page."""
-        if new_page != self.current_page: # Only reload if page actually changed
-            self.load_movies_page(new_page)
+        if not self.search_mode: # Only allow pagination if not in search mode
+            if new_page != self.current_page: # Only reload if page actually changed
+                self.load_movies_page(new_page)
 
     def open_login_window(self):
         """Opens the login window and passes a reference to this HomeWindow instance."""

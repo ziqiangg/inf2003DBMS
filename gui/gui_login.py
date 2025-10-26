@@ -52,10 +52,9 @@ class LoginWindow(QWidget):
             QMessageBox.information(self, 'Login Successful', result["message"])
             # Update session
             self.session_manager.login(result["user_id"], email, result["role"])
-            # --- NEW: Update the home window UI if a reference exists ---
+            # Update the home window UI if a reference exists ---
             if self.main_home_window:
                 self.main_home_window.update_ui_after_login()
-            # --- END NEW ---
             # Close login window
             self.close()
             # The HomeWindow will now reflect the logged-in state due to the update_ui_after_login call
