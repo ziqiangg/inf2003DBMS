@@ -214,9 +214,6 @@ ORDER BY r.timeStamp DESC
 LIMIT 3;
 """
 
-# database/sql_queries.py
-# ... (existing queries) ...
-
 # --- Genre Queries ---
 # Query to get all genres
 GET_ALL_GENRES = """

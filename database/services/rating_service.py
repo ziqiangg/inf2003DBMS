@@ -1,11 +1,11 @@
 # database/services/rating_service.py
 from database.repositories.rating_repository import RatingRepository
 from database.repositories.movie_repository import MovieRepository
+from database.db_connection import get_mysql_connection, close_connection
 
 class RatingService:
     def __init__(self):
         self.rating_repo = RatingRepository()
-        self.movie_repo = MovieRepository() # Need this to update movie's average rating
 
     def add_rating(self, user_id, tmdb_id, rating_value):
         """Adds or updates a rating and updates the movie's average."""
@@ -20,7 +20,7 @@ class RatingService:
         # Calculate and update the movie's average rating
         avg_rating, count_rating = self.rating_repo.get_average_rating_for_movie(tmdb_id)
         update_movie_query = "UPDATE Movies SET totalRatings = %s, countRatings = %s WHERE tmdbID = %s;"
-        connection = self.movie_repo.get_mysql_connection() # Assuming movie_repo has this helper
+        connection = get_mysql_connection()
         if connection:
             cursor = connection.cursor()
             try:
@@ -32,7 +32,7 @@ class RatingService:
                 connection.rollback()
             finally:
                 cursor.close()
-                self.movie_repo.close_connection(connection) # Assuming movie_repo has this helper
+                close_connection(connection)
 
         return {"success": True, "message": "Rating added/updated successfully."}
 
@@ -48,7 +48,7 @@ class RatingService:
         # Recalculate and update the movie's average rating
         avg_rating, count_rating = self.rating_repo.get_average_rating_for_movie(tmdb_id)
         update_movie_query = "UPDATE Movies SET totalRatings = %s, countRatings = %s WHERE tmdbID = %s;"
-        connection = self.movie_repo.get_mysql_connection()
+        connection = get_mysql_connection()
         if connection:
             cursor = connection.cursor()
             try:
@@ -59,7 +59,7 @@ class RatingService:
                 connection.rollback()
             finally:
                 cursor.close()
-                self.movie_repo.close_connection(connection)
+                close_connection(connection)
 
         return {"success": True, "message": "Rating updated successfully."}
 
@@ -72,7 +72,7 @@ class RatingService:
         # Recalculate and update the movie's average rating after deletion
         avg_rating, count_rating = self.rating_repo.get_average_rating_for_movie(tmdb_id)
         update_movie_query = "UPDATE Movies SET totalRatings = %s, countRatings = %s WHERE tmdbID = %s;"
-        connection = self.movie_repo.get_mysql_connection()
+        connection = get_mysql_connection()
         if connection:
             cursor = connection.cursor()
             try:
@@ -83,7 +83,7 @@ class RatingService:
                 connection.rollback()
             finally:
                 cursor.close()
-                self.movie_repo.close_connection(connection)
+                close_connection(connection)
 
         return {"success": True, "message": "Rating deleted successfully."}
 

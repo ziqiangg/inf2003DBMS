@@ -18,7 +18,7 @@ from gui.utils import is_placeholder_url, DEFAULT_POSTER_PATH, load_default_post
 
 class MovieDetailWindow(QWidget):
     def __init__(self, tmdb_id):
-        print(f"DEBUG: MovieDetailWindow.__init__ called with tmdb_id: {tmdb_id}")
+        # print(f"DEBUG: MovieDetailWindow.__init__ called with tmdb_id: {tmdb_id}")
         super().__init__()
         self.tmdb_id = tmdb_id
         self.session_manager = SessionManager()
@@ -33,25 +33,25 @@ class MovieDetailWindow(QWidget):
         self.setWindowTitle('Movie Details')
         self.setGeometry(150, 150, 1000, 800)
 
-        print("DEBUG: About to call self.init_ui()")
+        #print("DEBUG: About to call self.init_ui()")
         self.init_ui()
-        print("DEBUG: Finished calling self.init_ui()")
-        print("DEBUG: About to call self.load_movie_details()")
+        # print("DEBUG: Finished calling self.init_ui()")
+        # print("DEBUG: About to call self.load_movie_details()")
         self.load_movie_details()
-        print("DEBUG: Finished calling self.load_movie_details() - __init__ ending")
+        # print("DEBUG: Finished calling self.load_movie_details() - __init__ ending")
 
-    # NEW: Debug showEvent
+    # Debug showEvent
     def showEvent(self, event):
-        print("DEBUG: MovieDetailWindow.showEvent called - Window is being shown.")
+        # print("DEBUG: MovieDetailWindow.showEvent called - Window is being shown.")
         super().showEvent(event)
 
-    # NEW: Debug closeEvent
+    # Debug closeEvent
     def closeEvent(self, event):
-        print("DEBUG: MovieDetailWindow.closeEvent called - Window is about to close.")
+        # print("DEBUG: MovieDetailWindow.closeEvent called - Window is about to close.")
         event.accept() # Accept the close event, allowing the window to close
 
     def init_ui(self):
-        print("DEBUG: MovieDetailWindow.init_ui() called")
+        # print("DEBUG: MovieDetailWindow.init_ui() called")
         main_layout = QVBoxLayout()
         self.scroll_area = QScrollArea()
         self.scroll_widget = QWidget()
@@ -143,7 +143,7 @@ class MovieDetailWindow(QWidget):
         self.input_frame = QFrame()
         self.input_layout = QVBoxLayout(self.input_frame)
 
-        # --- NEW: Rating Button Input (0.0 to 5.0 in 0.5 steps) ---
+        # --- Rating Button Input (0.0 to 5.0 in 0.5 steps) ---
         self.rating_input_label = QLabel("Your Rating (0.0 to 5.0):")
         self.rating_input_layout = QHBoxLayout()
         self.rating_buttons = []
@@ -160,7 +160,6 @@ class MovieDetailWindow(QWidget):
 
         self.input_layout.addWidget(self.rating_input_label)
         self.input_layout.addLayout(self.rating_input_layout)
-        # --- END NEW ---
 
         self.review_input_label = QLabel("Your Review:")
         self.review_text_input = QTextEdit()
@@ -189,16 +188,16 @@ class MovieDetailWindow(QWidget):
         self.scroll_area.setWidgetResizable(True)
         main_layout.addWidget(self.scroll_area)
         self.setLayout(main_layout)
-        print("DEBUG: MovieDetailWindow.init_ui() finished")
+        # print("DEBUG: MovieDetailWindow.init_ui() finished")
 
     def select_rating(self, value, checked):
         """Handles rating button selection/deselection."""
-        print(f"DEBUG: select_rating called with value={value}, checked={checked}")
+        # print(f"DEBUG: select_rating called with value={value}, checked={checked}")
         # If the button was unchecked, and it was the currently selected one, clear the selection
         if not checked and hasattr(self, '_current_selected_rating') and self._current_selected_rating == value:
             self._current_selected_rating = None
             self.selected_rating = None # Store None if deselected
-            print(f"DEBUG: Rating deselected, stored: {self.selected_rating}")
+            # print(f"DEBUG: Rating deselected, stored: {self.selected_rating}")
             return
 
         # If the button was checked, update the selection
@@ -210,15 +209,15 @@ class MovieDetailWindow(QWidget):
             # Store the selected rating value
             self._current_selected_rating = value # Keep track internally
             self.selected_rating = value
-            print(f"DEBUG: Rating selected, stored: {self.selected_rating}")
+            # print(f"DEBUG: Rating selected, stored: {self.selected_rating}")
 
 
     def load_movie_details(self):
-        print(f"DEBUG: MovieDetailWindow.load_movie_details() called for tmdb_id: {self.tmdb_id}")
+        # print(f"DEBUG: MovieDetailWindow.load_movie_details() called for tmdb_id: {self.tmdb_id}")
         # Fetch main movie info
         movie_detail = self.movie_service.get_movie_detail(self.tmdb_id)
         if not movie_detail:
-            print(f"DEBUG: MovieDetailWindow.load_movie_details(): Movie detail not found for ID {self.tmdb_id}. Showing error and closing.")
+            # print(f"DEBUG: MovieDetailWindow.load_movie_details(): Movie detail not found for ID {self.tmdb_id}. Showing error and closing.")
             QMessageBox.critical(self, 'Error', f'Could not load details for movie ID {self.tmdb_id}.')
             self.close() # Close the window if movie not found
             return
@@ -237,9 +236,9 @@ class MovieDetailWindow(QWidget):
 
         # Load Poster
         poster_url = movie_detail.get('poster')
-        print(f"DEBUG: MovieDetailWindow.load_movie_details(): Poster URL is '{poster_url}'")
+        # print(f"DEBUG: MovieDetailWindow.load_movie_details(): Poster URL is '{poster_url}'")
         if is_placeholder_url(poster_url):
-            print("DEBUG: MovieDetailWindow.load_movie_details(): Poster URL is a placeholder.")
+            # print("DEBUG: MovieDetailWindow.load_movie_details(): Poster URL is a placeholder.")
             pixmap = QPixmap(DEFAULT_POSTER_PATH)
             if not pixmap.isNull():
                 scaled_pixmap = pixmap.scaled(300, 450, Qt.KeepAspectRatio, Qt.SmoothTransformation)
@@ -247,7 +246,7 @@ class MovieDetailWindow(QWidget):
             else:
                 self.poster_label.setText("No Poster")
         else:
-            print("DEBUG: MovieDetailWindow.load_movie_details(): Attempting to load poster from URL.")
+            # print("DEBUG: MovieDetailWindow.load_movie_details(): Attempting to load poster from URL.")
             request = QNetworkRequest(QUrl(poster_url))
             request.setTransferTimeout(5000)
             reply = self.network_manager.get(request)
@@ -268,38 +267,38 @@ class MovieDetailWindow(QWidget):
         self.overview_text.setPlainText(movie_detail.get('overview', 'No overview available.'))
 
         # --- Fetch and Populate Genres, Cast, Crew ---
-        print("DEBUG: MovieDetailWindow.load_movie_details(): Fetching genres...")
+        # print("DEBUG: MovieDetailWindow.load_movie_details(): Fetching genres...")
         genres = self.genre_service.get_genres_for_movie(self.tmdb_id)
-        print(f"DEBUG: MovieDetailWindow.load_movie_details(): Retrieved {len(genres)} genres.")
+        # print(f"DEBUG: MovieDetailWindow.load_movie_details(): Retrieved {len(genres)} genres.")
         genre_names = [g['genreName'] for g in genres]
         self.genres_text.setPlainText(", ".join(genre_names) if genre_names else "No genres listed.")
 
-        print("DEBUG: MovieDetailWindow.load_movie_details(): Fetching director...")
+        # print("DEBUG: MovieDetailWindow.load_movie_details(): Fetching director...")
         director_info = self.cast_crew_service.get_director_for_movie(self.tmdb_id)
-        print(f"DEBUG: MovieDetailWindow.load_movie_details(): Retrieved director info: {director_info}")
+        # print(f"DEBUG: MovieDetailWindow.load_movie_details(): Retrieved director info: {director_info}")
         self.director_text.setText(director_info['name'] if director_info else "Director information not available.")
 
-        print("DEBUG: MovieDetailWindow.load_movie_details(): Fetching cast...")
+        # print("DEBUG: MovieDetailWindow.load_movie_details(): Fetching cast...")
         cast_list = self.cast_crew_service.get_formatted_cast_list(self.tmdb_id)
-        print(f"DEBUG: MovieDetailWindow.load_movie_details(): Retrieved {len(cast_list)} cast members.")
+        # print(f"DEBUG: MovieDetailWindow.load_movie_details(): Retrieved {len(cast_list)} cast members.")
         self.cast_text.setPlainText(", ".join(cast_list) if cast_list else "Cast information not available.")
 
         # --- Fetch and Populate Reviews ---
-        print("DEBUG: MovieDetailWindow.load_movie_details(): Loading reviews...")
+        # print("DEBUG: MovieDetailWindow.load_movie_details(): Loading reviews...")
         self.load_reviews()
-        print("DEBUG: MovieDetailWindow.load_movie_details(): Finished loading reviews.")
+        # print("DEBUG: MovieDetailWindow.load_movie_details(): Finished loading reviews.")
 
         # --- Check for Existing User Rating/Review (if logged in) ---
-        print("DEBUG: MovieDetailWindow.load_movie_details(): Checking for existing user rating/review...")
+        # print("DEBUG: MovieDetailWindow.load_movie_details(): Checking for existing user rating/review...")
         if self.session_manager.is_logged_in():
             user_id = self.session_manager.get_current_user_id()
-            print(f"DEBUG: MovieDetailWindow.load_movie_details(): User is logged in (ID: {user_id}). Fetching existing rating/review.")
+            # print(f"DEBUG: MovieDetailWindow.load_movie_details(): User is logged in (ID: {user_id}). Fetching existing rating/review.")
             existing_rating = self.rating_service.get_user_rating_for_movie(user_id, self.tmdb_id)
             existing_review = self.review_service.get_user_review_for_movie(user_id, self.tmdb_id)
 
             if existing_rating:
                 rating_val = float(existing_rating['rating'])
-                print(f"DEBUG: MovieDetailWindow.load_movie_details(): Found existing rating: {rating_val}")
+                # print(f"DEBUG: MovieDetailWindow.load_movie_details(): Found existing rating: {rating_val}")
                 # Find the corresponding button and click it to select it
                 for btn in self.rating_buttons:
                     if btn.text() == f"{rating_val:.1f}":
@@ -310,14 +309,14 @@ class MovieDetailWindow(QWidget):
 
 
             if existing_review:
-                print(f"DEBUG: MovieDetailWindow.load_movie_details(): Found existing review: {existing_review['review'][:50]}...") # Print first 50 chars
+                # print(f"DEBUG: MovieDetailWindow.load_movie_details(): Found existing review: {existing_review['review'][:50]}...") # Print first 50 chars
                 self.review_text_input.setPlainText(existing_review['review']) # Pre-fill the review text
-        else:
-            print("DEBUG: MovieDetailWindow.load_movie_details(): User is not logged in, skipping rating/review check.")
-        print("DEBUG: MovieDetailWindow.load_movie_details(): Finished.")
+        #else:
+            #print("DEBUG: MovieDetailWindow.load_movie_details(): User is not logged in, skipping rating/review check.")
+        # print("DEBUG: MovieDetailWindow.load_movie_details(): Finished.")
 
     def load_reviews(self):
-        print("DEBUG: MovieDetailWindow.load_reviews() called")
+        # print("DEBUG: MovieDetailWindow.load_reviews() called")
         """Fetches and displays the 3 most recent reviews."""
         # Clear existing review widgets
         while self.reviews_container.count():
@@ -326,14 +325,14 @@ class MovieDetailWindow(QWidget):
                 child.widget().deleteLater()
 
         reviews = self.review_service.get_reviews_for_movie(self.tmdb_id)
-        print(f"DEBUG: MovieDetailWindow.load_reviews(): Retrieved {len(reviews)} reviews from service.")
+        # print(f"DEBUG: MovieDetailWindow.load_reviews(): Retrieved {len(reviews)} reviews from service.")
 
         if not reviews:
             no_reviews_label = QLabel("No reviews yet.")
             self.reviews_container.addWidget(no_reviews_label)
         else:
             for i, review in enumerate(reviews):
-                print(f"DEBUG: MovieDetailWindow.load_reviews(): Processing review {i+1}")
+                # print(f"DEBUG: MovieDetailWindow.load_reviews(): Processing review {i+1}")
                 review_widget = QWidget()
                 review_layout = QVBoxLayout(review_widget)
 
@@ -351,11 +350,11 @@ class MovieDetailWindow(QWidget):
                 review_layout.addWidget(review_text)
 
                 self.reviews_container.addWidget(review_widget)
-        print("DEBUG: MovieDetailWindow.load_reviews(): Finished.")
+        # print("DEBUG: MovieDetailWindow.load_reviews(): Finished.")
 
     def on_poster_load_finished(self, reply, poster_label, movie_title):
         """Callback for loading the movie poster."""
-        print(f"DEBUG: MovieDetailWindow.on_poster_load_finished() called for '{movie_title}'")
+        # print(f"DEBUG: MovieDetailWindow.on_poster_load_finished() called for '{movie_title}'")
         if reply.error() == QNetworkReply.NoError:
             image_data = reply.readAll()
             pixmap = QPixmap()
@@ -364,17 +363,16 @@ class MovieDetailWindow(QWidget):
                 scaled_pixmap = pixmap.scaled(300, 450, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 poster_label.setPixmap(scaled_pixmap)
             else:
-                print(f"DEBUG: MovieDetailWindow.on_poster_load_finished(): Could not load image data for movie '{movie_title}' from {reply.url().toString()}")
-                # --- NEW: Use helper from utils ---
+                # print(f"DEBUG: MovieDetailWindow.on_poster_load_finished(): Could not load image data for movie '{movie_title}' from {reply.url().toString()}")
+                # --- Use helper from utils ---
                 load_default_poster(poster_label, size=(300, 450))
-                # --- END NEW ---
+                
         else:
-            print(f"DEBUG: MovieDetailWindow.on_poster_load_finished(): Failed to load poster for '{movie_title}' from {reply.url().toString()}: {reply.errorString()}")
-            # --- NEW: Use helper from utils ---
+            # print(f"DEBUG: MovieDetailWindow.on_poster_load_finished(): Failed to load poster for '{movie_title}' from {reply.url().toString()}: {reply.errorString()}")
+            # --- Use helper from utils ---
             load_default_poster(poster_label, size=(300, 450))
-            # --- END NEW ---
         reply.deleteLater()
-        print(f"DEBUG: MovieDetailWindow.on_poster_load_finished(): Finished for '{movie_title}'")
+        # print(f"DEBUG: MovieDetailWindow.on_poster_load_finished(): Finished for '{movie_title}'")
 
     # Note: This helper is redundant now as load_default_poster from utils.py is used
     # def load_default_poster(self, poster_label):
@@ -388,9 +386,9 @@ class MovieDetailWindow(QWidget):
 
     def submit_rating_review(self):
         """Handles submitting the user's rating and/or review."""
-        print("DEBUG: MovieDetailWindow.submit_rating_review() called")
+        # print("DEBUG: MovieDetailWindow.submit_rating_review() called")
         if not self.session_manager.is_logged_in():
-            print("DEBUG: MovieDetailWindow.submit_rating_review(): User not logged in.")
+            # print("DEBUG: MovieDetailWindow.submit_rating_review(): User not logged in.")
             QMessageBox.warning(self, 'Not Logged In', 'You must be logged in to rate or review a movie.')
             return
 
@@ -398,13 +396,13 @@ class MovieDetailWindow(QWidget):
         # Get the rating value from the slider via the stored attribute
         # Ensure selected_rating exists as an attribute before accessing it
         rating_value = getattr(self, 'selected_rating', None)
-        print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Retrieved rating_value: {rating_value}")
+        # print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Retrieved rating_value: {rating_value}")
         review_text = self.review_text_input.toPlainText().strip()
-        print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Retrieved review_text: {review_text}")
+        # print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Retrieved review_text: {review_text}")
 
         # At least one action (rating or review) must be provided
         if rating_value is None and not review_text:
-             print("DEBUG: MovieDetailWindow.submit_rating_review(): No rating or review provided.")
+             # print("DEBUG: MovieDetailWindow.submit_rating_review(): No rating or review provided.")
              QMessageBox.warning(self, 'No Input', 'Please provide a rating or a review.')
              return
 
@@ -413,23 +411,23 @@ class MovieDetailWindow(QWidget):
 
         # Submit Rating if selected
         if rating_value is not None:
-            print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Attempting to submit rating: {rating_value}")
+            # print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Attempting to submit rating: {rating_value}")
             # Pass the float rating_value directly
             rating_result = self.rating_service.add_rating(user_id, self.tmdb_id, rating_value)
-            print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Rating service result: {rating_result}")
+            # print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Rating service result: {rating_result}")
             success &= rating_result["success"]
             message_parts.append(f"Rating: {rating_result['message']}")
 
         # Submit Review if provided
         if review_text:
-            print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Attempting to submit review: {review_text[:50]}...") # Print first 50 chars
+            #print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Attempting to submit review: {review_text[:50]}...") # Print first 50 chars
             review_result = self.review_service.add_review(user_id, self.tmdb_id, review_text)
-            print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Review service result: {review_result}")
+            #print(f"DEBUG: MovieDetailWindow.submit_rating_review(): Review service result: {review_result}")
             success &= review_result["success"]
             message_parts.append(f"Review: {review_result['message']}")
 
         if success:
-            print("DEBUG: MovieDetailWindow.submit_rating_review(): All submissions successful.")
+            #print("DEBUG: MovieDetailWindow.submit_rating_review(): All submissions successful.")
             QMessageBox.information(self, 'Success', " ".join(message_parts))
             # Reload movie details to show updated average rating and review count
             self.load_movie_details()
@@ -444,9 +442,9 @@ class MovieDetailWindow(QWidget):
             if review_text:
                 self.review_text_input.clear()
         else:
-            print("DEBUG: MovieDetailWindow.submit_rating_review(): Some submissions failed.")
+            #print("DEBUG: MovieDetailWindow.submit_rating_review(): Some submissions failed.")
             QMessageBox.critical(self, 'Error', " ".join(message_parts))
-        print("DEBUG: MovieDetailWindow.submit_rating_review(): Finished.")
+        #print("DEBUG: MovieDetailWindow.submit_rating_review(): Finished.")
 
 # Example for standalone testing (usually called from gui_home.py)
 # if __name__ == '__main__':
