@@ -19,7 +19,13 @@ class RatingRepository:
         try:
             cursor.execute(INSERT_RATING, (user_id, tmdb_id, rating))
             connection.commit()
-            return cursor.rowcount > 0 # Returns True if a row was inserted/updated
+            # For INSERT ... ON DUPLICATE KEY UPDATE:
+            # - rowcount = 1: New row inserted
+            # - rowcount = 2: Row updated (rare for this query)
+            # - rowcount = 0: Row updated to same value (no change)
+            # All indicate the desired state is achieved, so success if no exception.
+            # Using rowcount >= 0 correctly reflects this outcome based on the query's behavior.
+            return cursor.rowcount >= 0
         except Exception as e:
             print(f"Error creating/updating rating: {e}")
             connection.rollback()
@@ -38,7 +44,12 @@ class RatingRepository:
         try:
             cursor.execute(UPDATE_RATING, (new_rating, user_id, tmdb_id))
             connection.commit()
-            return cursor.rowcount > 0 # Returns True if a row was updated
+            # For a standard UPDATE:
+            # - rowcount = 1: Exactly one row was updated (success)
+            # - rowcount = 0: No rows matched the WHERE clause (rating didn't exist, failure)
+            # - rowcount > 1: Should not happen with composite PK (userID, tmdbID)
+            # We only consider it a success if an existing row was actually modified.
+            return cursor.rowcount > 0
         except Exception as e:
             print(f"Error updating rating: {e}")
             connection.rollback()
@@ -57,7 +68,10 @@ class RatingRepository:
         try:
             cursor.execute(DELETE_RATING, (user_id, tmdb_id))
             connection.commit()
-            return cursor.rowcount > 0 # Returns True if a row was deleted
+            # For DELETE:
+            # - rowcount = 1: Exactly one row was deleted (success)
+            # - rowcount = 0: No rows matched the WHERE clause (rating didn't exist, failure)
+            return cursor.rowcount > 0
         except Exception as e:
             print(f"Error deleting rating: {e}")
             connection.rollback()

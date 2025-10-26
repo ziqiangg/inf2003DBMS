@@ -19,7 +19,12 @@ class ReviewRepository:
         try:
             cursor.execute(INSERT_REVIEW, (user_id, tmdb_id, review_text))
             connection.commit()
-            return cursor.rowcount > 0 # Returns True if a row was inserted/updated
+            # For INSERT ... ON DUPLICATE KEY UPDATE:
+            # - rowcount = 1: New row inserted
+            # - rowcount = 2: Row updated (rare for this query structure)
+            # - rowcount = 0: Row updated to same value (no change)
+            # All indicate the desired state is achieved, so success if no exception.
+            return cursor.rowcount >= 0
         except Exception as e:
             print(f"Error creating/updating review: {e}")
             connection.rollback()
@@ -38,7 +43,7 @@ class ReviewRepository:
         try:
             cursor.execute(UPDATE_REVIEW, (new_review_text, user_id, tmdb_id))
             connection.commit()
-            return cursor.rowcount > 0 # Returns True if a row was updated
+            return cursor.rowcount > 0 # Returns True if a row was updated (must exist and value changed)
         except Exception as e:
             print(f"Error updating review: {e}")
             connection.rollback()
