@@ -159,5 +159,100 @@ WHERE r.tmdbID = %s
 ORDER BY r.timeStamp DESC;
 """
 
+# --- Rating Queries ---
+# Query to insert a new rating
+INSERT_RATING = """
+INSERT INTO Ratings (userID, tmdbID, rating) VALUES (%s, %s, %s)
+ON DUPLICATE KEY UPDATE rating = VALUES(rating);
+"""
+# Query to update an existing rating
+UPDATE_RATING = """
+UPDATE Ratings SET rating = %s WHERE userID = %s AND tmdbID = %s;
+"""
+# Query to delete a rating
+DELETE_RATING = """
+DELETE FROM Ratings WHERE userID = %s AND tmdbID = %s;
+"""
+# Query to get a specific rating by user and movie
+GET_RATING_BY_USER_AND_MOVIE = """
+SELECT userID, tmdbID, rating FROM Ratings WHERE userID = %s AND tmdbID = %s;
+"""
+# Query to get all ratings for a specific movie
+GET_RATINGS_FOR_MOVIE = """
+SELECT userID, rating FROM Ratings WHERE tmdbID = %s;
+"""
+# Query to get the average rating for a movie (used for updating Movies table)
+GET_AVERAGE_RATING_FOR_MOVIE = """
+SELECT AVG(rating) AS avg_rating, COUNT(rating) AS rating_count FROM Ratings WHERE tmdbID = %s;
+"""
+
+# --- Review Queries ---
+# Query to insert a new review
+INSERT_REVIEW = """
+INSERT INTO Reviews (userID, tmdbID, review) VALUES (%s, %s, %s)
+ON DUPLICATE KEY UPDATE review = VALUES(review);
+"""
+# Query to update an existing review
+UPDATE_REVIEW = """
+UPDATE Reviews SET review = %s WHERE userID = %s AND tmdbID = %s;
+"""
+# Query to delete a review
+DELETE_REVIEW = """
+DELETE FROM Reviews WHERE userID = %s AND tmdbID = %s;
+"""
+# Query to get a specific review by user and movie
+GET_REVIEW_BY_USER_AND_MOVIE = """
+SELECT userID, tmdbID, review, timeStamp FROM Reviews WHERE userID = %s AND tmdbID = %s;
+"""
+# Query to get all reviews for a specific movie (limiting to 3 most recent)
+GET_REVIEWS_FOR_MOVIE = """
+SELECT r.userID, u.email, r.review, r.timeStamp
+FROM Reviews r
+JOIN Users u ON r.userID = u.userID
+WHERE r.tmdbID = %s
+ORDER BY r.timeStamp DESC
+LIMIT 3;
+"""
+
+# database/sql_queries.py
+# ... (existing queries) ...
+
+# --- Genre Queries ---
+# Query to get all genres
+GET_ALL_GENRES = """
+SELECT genreID, genreName FROM Genre ORDER BY genreName;
+"""
+# Query to get genres associated with a specific movie
+GET_GENRES_FOR_MOVIE = """
+SELECT g.genreID, g.genreName
+FROM Genre g
+JOIN Movie_Genre mg ON g.genreID = mg.genreID
+WHERE mg.tmdbID = %s;
+"""
+# Query to get movies associated with a specific genre
+GET_MOVIES_BY_GENRE = """
+SELECT DISTINCT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, m.runtime, m.totalRatings, m.countRatings
+FROM Movies m
+JOIN Movie_Genre mg ON m.tmdbID = mg.tmdbID
+JOIN Genre g ON mg.genreID = g.genreID
+WHERE g.genreName = %s;
+"""
+# Query to get all genres for the dropdown/filtering (same as GET_ALL_GENRES, kept for clarity if needed elsewhere)
+GET_GENRES_FOR_FILTER = """
+SELECT genreName FROM Genre ORDER BY genreName;
+"""
+# Query to insert a new genre (Admin functionality)
+INSERT_GENRE = """
+INSERT INTO Genre (genreName) VALUES (%s);
+"""
+# Query to update an existing genre (Admin functionality)
+UPDATE_GENRE = """
+UPDATE Genre SET genreName = %s WHERE genreID = %s;
+"""
+# Query to delete a genre (Admin functionality) - Note: This will fail if foreign key constraints exist in Movie_Genre
+DELETE_GENRE = """
+DELETE FROM Genre WHERE genreID = %s;
+"""
+
 # Example: Query to get all cast and crew for a specific movie from MongoDB (this will be handled differently)
 # GET_MOVIE_CAST_CREW = "..." # This will likely be a MongoDB query handled in db_mongo_pre_function.py or a dedicated service

@@ -4,28 +4,14 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
     QGridLayout, QMessageBox, QFrame, QTextEdit, QSizePolicy, QSpacerItem
 )
-from PyQt5.QtCore import Qt, QUrl, QEventLoop
+from PyQt5.QtCore import Qt, QUrl # Added QUrl for potential link handling
 from PyQt5.QtGui import QPixmap, QIcon
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 import sys
 from gui.session_manager import SessionManager
 from database.services.movie_service import MovieService
-from gui.gui_movie_detail import MovieDetailWindow # Assuming you will create this next
-
-# Define the path to the default poster image
-DEFAULT_POSTER_PATH = "images/no_poster.png" # Adjust path if stored elsewhere
-
-# Define placeholder patterns to check against
-PLACEHOLDER_PATTERNS = [
-    "via.placeholder.com",
-    # Add other known placeholder/invalid URL patterns here if found
-]
-
-def is_placeholder_url(url):
-    """Checks if the given URL matches any known placeholder patterns."""
-    if not url:
-        return True # Consider None or empty string as placeholder/default
-    return any(pattern in url for pattern in PLACEHOLDER_PATTERNS)
+from gui.gui_movie_detail import MovieDetailWindow
+from gui.utils import is_placeholder_url, DEFAULT_POSTER_PATH, load_default_poster
 
 
 class HomeWindow(QWidget):
@@ -51,15 +37,26 @@ class HomeWindow(QWidget):
     def init_ui(self):
         main_layout = QVBoxLayout()
 
-        # --- Top Bar (User Info, Logout) ---
+        # --- Top Bar (User Info, Login Button, Logout Button) ---
         top_bar_layout = QHBoxLayout()
-        self.user_label = QLabel(f"Logged in as: {self.session_manager.get_current_user_email() or 'Guest'} ({self.session_manager.get_current_user_role()})")
-        logout_button = QPushButton("Logout")
-        logout_button.clicked.connect(self.logout)
 
-        top_bar_layout.addWidget(self.user_label)
-        top_bar_layout.addStretch() # Push logout button to the right
-        top_bar_layout.addWidget(logout_button)
+        # Show user info if logged in, otherwise show a generic message
+        if self.session_manager.is_logged_in():
+            self.user_label = QLabel(f"Logged in as: {self.session_manager.get_current_user_email()} ({self.session_manager.get_current_user_role()})")
+            logout_button = QPushButton("Logout")
+            logout_button.clicked.connect(self.logout)
+            top_bar_layout.addWidget(self.user_label)
+            top_bar_layout.addStretch() # Push logout button to the right
+            top_bar_layout.addWidget(logout_button)
+        else:
+            # Show a generic message and a login button
+            self.user_label = QLabel("Guest User") # Or just remove the user label entirely if desired
+            login_button = QPushButton("Login / Register")
+            login_button.clicked.connect(self.open_login_window)
+            top_bar_layout.addWidget(self.user_label)
+            top_bar_layout.addStretch() # Push login button to the right
+            top_bar_layout.addWidget(login_button)
+
         main_layout.addLayout(top_bar_layout)
 
         # --- Search Bar (Optional for now, can be added later) ---
@@ -111,6 +108,7 @@ class HomeWindow(QWidget):
 
         # Clear existing movie widgets from the grid layout
         # Method to clear layout: https://stackoverflow.com/a/45790404
+        # To remove widgets/layouts from a layout, you typically need to take them out and delete them
         while self.movie_grid_layout.count():
             child = self.movie_grid_layout.takeAt(0)
             if child.widget():
@@ -131,22 +129,6 @@ class HomeWindow(QWidget):
         self.page_label.setText(f"Page {self.current_page} of {result['total_pages']}")
         self.prev_button.setEnabled(result['has_prev'])
         self.next_button.setEnabled(result['has_next'])
-
-        # --- REMOVED: Update dynamic page number buttons ---
-        # # Clear existing buttons
-        # while self.page_buttons_layout.count():
-        #     child = self.page_buttons_layout.takeAt(0)
-        #     if child.widget():
-        #         child.widget().deleteLater()
-        #
-        # # Create new buttons for the page range
-        # for page_num in result['page_numbers']:
-        #     btn = QPushButton(str(page_num))
-        #     btn.setCheckable(True) # Allows visual feedback for current page
-        #     btn.setChecked(page_num == self.current_page) # Highlight current page
-        #     btn.clicked.connect(lambda _, p=page_num: self.change_page(p))
-        #     self.page_buttons_layout.addWidget(btn)
-
 
     def create_movie_widget(self, movie_data):
         """Creates a QWidget representing a single movie."""
@@ -178,11 +160,9 @@ class HomeWindow(QWidget):
             request = QNetworkRequest(QUrl(poster_url))
             # Set a short timeout for the request (optional, handled differently in async)
             request.setTransferTimeout(5000) # Timeout in milliseconds (e.g., 5 seconds)
-
             # Start the network request using the manager
             # The finished signal will be emitted when the request completes (success, failure, timeout)
             reply = self.network_manager.get(request)
-
             # Connect the 'finished' signal of the reply object to a lambda
             # This lambda captures the specific 'poster_label' widget for this movie
             # and the 'movie_data' title for potential error logging.
@@ -193,8 +173,6 @@ class HomeWindow(QWidget):
             # The label currently shows nothing or the old pixmap if reused. It will be updated by the callback.
             # You could set a temporary loading image here if desired.
             # --- END ASYNC LOADING ---
-
-
         # Movie Title
         title_label = QLabel(movie_data.get('title', 'Unknown Title'))
         title_label.setWordWrap(True) # Allow text wrapping
@@ -232,6 +210,7 @@ class HomeWindow(QWidget):
 
         # Connect click event to open movie detail
         def open_detail():
+            from gui.gui_movie_detail import MovieDetailWindow
             detail_window = MovieDetailWindow(movie_data['tmdbID']) # Pass the movie ID
             detail_window.show()
 
@@ -262,13 +241,12 @@ class HomeWindow(QWidget):
             else:
                 # If QPixmap couldn't be created from data (unexpected), use default
                 print(f"Could not load image data for movie '{movie_title}' from {reply.url().toString()}")
-                self.load_default_poster(poster_label)
+                load_default_poster(poster_label, size=(200, 300))
         else: # Error (e.g., 404, timeout, network failure)
             # Print the error for debugging (optional)
-            print(f"Failed to load poster for '{movie_title}' from {reply.url().toString()}: {reply.errorString()}")
+            # print(f"Failed to load poster for '{movie_title}' from {reply.url().toString()}: {reply.errorString()}")
             # Load the default poster for the specific label
-            self.load_default_poster(poster_label)
-
+            load_default_poster(poster_label, size=(200, 300))
         # Clean up the reply object to free resources
         reply.deleteLater()
 
@@ -287,6 +265,13 @@ class HomeWindow(QWidget):
         if new_page != self.current_page: # Only reload if page actually changed
             self.load_movies_page(new_page)
 
+    def open_login_window(self):
+        """Opens the login window."""
+        # Import LoginWindow here to avoid circular import at module level
+        from gui.gui_login import LoginWindow
+        self.login_window = LoginWindow()
+        self.login_window.show()
+
     def logout(self):
         """Handles user logout."""
         reply = QMessageBox.question(self, 'Logout', 'Are you sure you want to logout?',
@@ -294,11 +279,13 @@ class HomeWindow(QWidget):
 
         if reply == QMessageBox.Yes:
             self.session_manager.logout()
-            self.close() # Close the home window
-            # You might want to reopen the login window here if this is the main app window
-            # from gui.gui_login import LoginWindow
-            # self.login_window = LoginWindow()
-            # self.login_window.show()
+            # Optionally, reload the UI to reflect the logged-out state (e.g., update user label, hide logout button, show login button)
+            # For now, just close and reopen the home window to refresh the state
+            self.close()
+            # Re-open the home window (which will now show the login button)
+            # We need to pass the session manager or let the new instance create its own singleton
+            new_home_window = HomeWindow()
+            new_home_window.show()
 
 
 # Example of how to run the home window (usually opened from gui_login.py after successful login)

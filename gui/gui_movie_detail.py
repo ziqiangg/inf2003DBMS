@@ -1,260 +1,367 @@
-# gui/gui_movie_detail.py
-
+# gui/movie_detail.py
+import sys
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit,
-    QFormLayout, QMessageBox, QFrame
+    QFormLayout, QScrollArea, QFrame, QMessageBox, QGridLayout, QSpacerItem
 )
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap, QPalette
-import requests
-from io import BytesIO
+from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtGui import QPixmap, QIcon
+from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from gui.session_manager import SessionManager
 from database.services.movie_service import MovieService
-from database.services.rating_service import RatingService # Assuming you'll create this
-from database.services.review_service import ReviewService # Assuming you'll create this
+from database.services.rating_service import RatingService
+from database.services.review_service import ReviewService
+from database.services.genre_service import GenreService
+from database.services.cast_crew_service import CastCrewService
+
+from gui.utils import is_placeholder_url, DEFAULT_POSTER_PATH, load_default_poster
 
 class MovieDetailWindow(QWidget):
     def __init__(self, tmdb_id):
         super().__init__()
-        self.setWindowTitle('Movie Details')
-        self.setGeometry(200, 200, 800, 600)
-
         self.tmdb_id = tmdb_id
         self.session_manager = SessionManager()
         self.movie_service = MovieService()
-        # self.rating_service = RatingService() # Initialize if needed
-        # self.review_service = ReviewService() # Initialize if needed
+        self.rating_service = RatingService()
+        self.review_service = ReviewService()
+        self.genre_service = GenreService()
+        self.cast_crew_service = CastCrewService()
 
-        self.movie_data = None # Will store the fetched movie details
+        self.network_manager = QNetworkAccessManager()
+
+        self.setWindowTitle('Movie Details')
+        self.setGeometry(150, 150, 1000, 800)
 
         self.init_ui()
         self.load_movie_details()
 
     def init_ui(self):
         main_layout = QVBoxLayout()
+        self.scroll_area = QScrollArea()
+        self.scroll_widget = QWidget()
+        self.scroll_layout = QVBoxLayout(self.scroll_widget)
 
-        # --- Top Bar (Back Button, User Info) ---
-        top_bar_layout = QHBoxLayout()
-        back_button = QPushButton("Back to Home")
-        back_button.clicked.connect(self.close) # Simply close this window
-        self.user_label = QLabel(f"Logged in as: {self.session_manager.get_current_user_email() or 'Guest'} ({self.session_manager.get_current_user_role()})")
+        # --- Movie Info Section ---
+        self.movie_info_frame = QFrame()
+        self.movie_info_layout = QVBoxLayout(self.movie_info_frame)
 
-        top_bar_layout.addWidget(back_button)
-        top_bar_layout.addStretch()
-        top_bar_layout.addWidget(self.user_label)
-        main_layout.addLayout(top_bar_layout)
-
-        # --- Movie Details Content ---
-        content_frame = QFrame()
-        content_layout = QVBoxLayout(content_frame)
-
-        # Movie Poster and Info Side-by-Side
-        top_info_layout = QHBoxLayout()
-
-        # Poster
+        # Top row: Poster and Title/Link
+        top_row_layout = QHBoxLayout()
         self.poster_label = QLabel()
-        self.poster_label.setFixedSize(300, 450) # Set a fixed size
+        self.poster_label.setFixedSize(300, 450) # Larger size for detail page
         self.poster_label.setAlignment(Qt.AlignCenter)
         self.poster_label.setStyleSheet("border: 1px solid gray;")
-        top_info_layout.addWidget(self.poster_label)
+        top_row_layout.addWidget(self.poster_label)
 
-        # Info (Title, Release Date, Runtime, Rating, Overview, Link)
-        info_layout = QFormLayout()
+        title_link_layout = QVBoxLayout()
+        self.title_label = QLabel("Loading...")
+        self.title_label.setStyleSheet("font-size: 24px; font-weight: bold;")
+        title_link_layout.addWidget(self.title_label)
 
-        self.title_label = QLabel("Title: Loading...")
-        self.title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
-        info_layout.addRow("Title:", self.title_label)
+        self.link_label = QLabel("Loading...")
+        self.link_label.setOpenExternalLinks(True) # Make links clickable
+        self.link_label.setTextFormat(Qt.RichText)
+        title_link_layout.addWidget(self.link_label)
 
+        top_row_layout.addLayout(title_link_layout)
+        top_row_layout.addStretch()
+        self.movie_info_layout.addLayout(top_row_layout)
+
+        # Middle row: Runtime, Rating, Release Date
+        info_row_layout = QHBoxLayout()
+        self.runtime_label = QLabel("Runtime: Loading...")
+        self.avg_rating_label = QLabel("Average Rating: Loading...")
         self.release_date_label = QLabel("Release Date: Loading...")
-        info_layout.addRow("Release Date:", self.release_date_label)
 
-        self.runtime_label = QLabel("Runtime: Loading... mins")
-        info_layout.addRow("Runtime:", self.runtime_label)
+        info_row_layout.addWidget(self.runtime_label)
+        info_row_layout.addWidget(self.avg_rating_label)
+        info_row_layout.addWidget(self.release_date_label)
+        info_row_layout.addStretch()
+        self.movie_info_layout.addLayout(info_row_layout)
 
-        self.rating_label = QLabel("Average Rating: Loading...")
-        info_layout.addRow("Average Rating:", self.rating_label)
-
+        # Overview
+        self.overview_label = QLabel("Overview:")
+        self.overview_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
         self.overview_text = QTextEdit()
-        self.overview_text.setMaximumHeight(100)
         self.overview_text.setReadOnly(True)
-        info_layout.addRow("Overview:", self.overview_text)
+        self.overview_text.setMaximumHeight(120)
+        self.movie_info_layout.addWidget(self.overview_label)
+        self.movie_info_layout.addWidget(self.overview_text)
 
-        # Link (if available)
-        self.link_label = QLabel("Official Website: N/A")
-        self.link_label.setOpenExternalLinks(True) # Allow clicking on links
-        info_layout.addRow("Link:", self.link_label)
+        # --- Genres, Cast, Crew Section ---
+        self.metadata_frame = QFrame()
+        self.metadata_layout = QFormLayout(self.metadata_frame)
 
-        top_info_layout.addLayout(info_layout)
-        content_layout.addLayout(top_info_layout)
+        self.genres_label = QLabel("Genres:")
+        self.genres_text = QTextEdit()
+        self.genres_text.setReadOnly(True)
+        self.genres_text.setMaximumHeight(60)
+        self.metadata_layout.addRow(self.genres_label, self.genres_text)
 
-        # --- Rating/Review Section (Visible only if logged in) ---
-        self.rating_review_section = QFrame()
-        rating_review_layout = QVBoxLayout(self.rating_review_section)
+        self.director_label = QLabel("Director:")
+        self.director_text = QLabel("Loading...")
+        self.metadata_layout.addRow(self.director_label, self.director_text)
 
-        # Rating Input
-        self.rate_label = QLabel("Rate this movie (0-5):")
-        self.rate_input = None # Will be created if user is logged in
-        self.rate_button = None # Will be created if user is logged in
+        self.cast_label = QLabel("Cast:")
+        self.cast_text = QTextEdit()
+        self.cast_text.setReadOnly(True)
+        self.cast_text.setMaximumHeight(100)
+        self.metadata_layout.addRow(self.cast_label, self.cast_text)
 
-        # Review Input
-        self.review_label = QLabel("Write a review:")
-        self.review_input = None # Will be created if user is logged in
-        self.review_submit_button = None # Will be created if user is logged in
+        self.scroll_layout.addWidget(self.movie_info_frame)
+        self.scroll_layout.addWidget(self.metadata_frame)
 
-        # Display existing ratings/reviews
-        self.reviews_display = QTextEdit()
-        self.reviews_display.setReadOnly(True)
-        rating_review_layout.addWidget(QLabel("User Reviews:"))
-        rating_review_layout.addWidget(self.reviews_display)
+        # --- Reviews Section ---
+        self.reviews_frame = QFrame()
+        self.reviews_layout = QVBoxLayout(self.reviews_frame)
+        self.reviews_label = QLabel("Recent Reviews:")
+        self.reviews_label.setStyleSheet("font-weight: bold; font-size: 16px; margin-top: 10px;")
+        self.reviews_layout.addWidget(self.reviews_label)
 
-        content_layout.addWidget(self.rating_review_section)
+        self.reviews_container = QVBoxLayout()
+        self.reviews_layout.addLayout(self.reviews_container)
 
-        main_layout.addWidget(content_frame)
+        self.scroll_layout.addWidget(self.reviews_frame)
 
+        # --- Rating/Review Input Section (Visible only if logged in) ---
+        self.input_frame = QFrame()
+        self.input_layout = QVBoxLayout(self.input_frame)
+
+        self.rating_input_label = QLabel("Your Rating (0-5):")
+        self.rating_input_layout = QHBoxLayout()
+        self.rating_buttons = []
+        for i in range(6): # Buttons for 0 to 5
+            btn = QPushButton(str(i))
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda _, val=i: self.select_rating(val))
+            self.rating_buttons.append(btn)
+            self.rating_input_layout.addWidget(btn)
+
+        self.input_layout.addWidget(self.rating_input_label)
+        self.input_layout.addLayout(self.rating_input_layout)
+
+        self.review_input_label = QLabel("Your Review:")
+        self.review_text_input = QTextEdit()
+        self.review_text_input.setMaximumHeight(100)
+        self.input_layout.addWidget(self.review_input_label)
+        self.input_layout.addWidget(self.review_text_input)
+
+        self.submit_button = QPushButton("Submit Rating/Review")
+        self.submit_button.clicked.connect(self.submit_rating_review)
+        self.input_layout.addWidget(self.submit_button)
+
+        # Initially hide the input frame if not logged in
+        if not self.session_manager.is_logged_in():
+            self.input_frame.hide()
+        self.scroll_layout.addWidget(self.input_frame)
+
+        # --- Back Button ---
+        back_button_layout = QHBoxLayout()
+        back_button_layout.addStretch()
+        back_button = QPushButton("Back to Home")
+        back_button.clicked.connect(self.close)
+        back_button_layout.addWidget(back_button)
+        self.scroll_layout.addLayout(back_button_layout)
+
+        self.scroll_area.setWidget(self.scroll_widget)
+        self.scroll_area.setWidgetResizable(True)
+        main_layout.addWidget(self.scroll_area)
         self.setLayout(main_layout)
 
-        # Initially hide the rating/review section if not logged in
-        if not self.session_manager.is_logged_in():
-            self.rating_review_section.setVisible(False)
-
-
     def load_movie_details(self):
-        """Fetches and displays details for the movie specified by tmdb_id."""
-        movie_data = self.movie_service.get_movie_detail(self.tmdb_id)
-
-        if not movie_data:
-            QMessageBox.critical(self, 'Error', f'Failed to load details for movie ID {self.tmdb_id}.')
-            self.title_label.setText("Movie Not Found")
+        """Fetches and populates all movie details."""
+        # Fetch main movie info
+        movie_detail = self.movie_service.get_movie_detail(self.tmdb_id)
+        if not movie_detail:
+            QMessageBox.critical(self, 'Error', f'Could not load details for movie ID {self.tmdb_id}.')
+            self.close() # Close the window if movie not found
             return
 
-        self.movie_data = movie_data
+        # --- Populate Movie Info ---
+        self.title_label.setText(movie_detail.get('title', 'Unknown Title'))
+        # Note: 'link' field is not present in the provided Movies table schema.
+        # Assuming it's stored but maybe empty. If not stored, this will be empty.
+        link_url = movie_detail.get('link', '') # Get the link from the movie detail
+        if link_url:
+            self.link_label.setText(f'<a href="{link_url}">{link_url}</a>')
+        else:
+            self.link_label.setText("No official website link available.")
 
-        # Update UI elements with movie data
-        self.title_label.setText(movie_data.get('title', 'Unknown Title'))
-        self.release_date_label.setText(str(movie_data.get('releaseDate', 'Unknown Date')))
-        runtime = movie_data.get('runtime')
-        self.runtime_label.setText(f"{runtime} mins" if runtime else "N/A")
-        avg_rating = movie_data.get('totalRatings', 0)
-        num_ratings = movie_data.get('countRatings', 0)
-        self.rating_label.setText(f"{avg_rating:.2f}/5 ({num_ratings} ratings)")
-        self.overview_text.setPlainText(movie_data.get('overview', 'No overview available.'))
-        # Note: Link is not currently stored in the Movies table based on the schema provided earlier.
-        # self.link_label.setText(f'<a href="{movie_data.get("link", "")}">Official Website</a>' if movie_data.get("link") else "N/A")
-
-        # Load poster image
-        poster_url = movie_data.get('poster')
-        if poster_url:
-            try:
-                response = requests.get(poster_url)
-                if response.status_code == 200:
-                    pixmap = QPixmap()
-                    pixmap.loadFromData(response.content)
-                    scaled_pixmap = pixmap.scaled(300, 450, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    self.poster_label.setPixmap(scaled_pixmap)
-                else:
-                    self.poster_label.setText("No Poster")
-            except Exception as e:
-                print(f"Error loading poster: {e}")
+        # Load Poster
+        poster_url = movie_detail.get('poster')
+        if is_placeholder_url(poster_url):
+            pixmap = QPixmap(DEFAULT_POSTER_PATH)
+            if not pixmap.isNull():
+                scaled_pixmap = pixmap.scaled(300, 450, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.poster_label.setPixmap(scaled_pixmap)
+            else:
                 self.poster_label.setText("No Poster")
         else:
-            self.poster_label.setText("No Poster")
+            request = QNetworkRequest(QUrl(poster_url))
+            request.setTransferTimeout(5000)
+            reply = self.network_manager.get(request)
+            reply.finished.connect(
+                lambda: self.on_poster_load_finished(reply, self.poster_label, movie_detail.get('title', 'Unknown'))
+            )
 
-        # If logged in, show rating/review inputs and populate reviews display
+        runtime = movie_detail.get('runtime')
+        self.runtime_label.setText(f"Runtime: {runtime} minutes" if runtime else "Runtime: Unknown")
+
+        avg_rating = movie_detail.get('totalRatings', 0)
+        count_rating = movie_detail.get('countRatings', 0)
+        self.avg_rating_label.setText(f"Average Rating: {avg_rating:.1f}/5 ({count_rating} ratings)")
+
+        release_date = movie_detail.get('releaseDate')
+        self.release_date_label.setText(f"Release Date: {release_date}" if release_date else "Release Date: Unknown")
+
+        self.overview_text.setPlainText(movie_detail.get('overview', 'No overview available.'))
+
+        # --- Fetch and Populate Genres, Cast, Crew ---
+        genres = self.genre_service.get_genres_for_movie(self.tmdb_id)
+        genre_names = [g['genreName'] for g in genres]
+        self.genres_text.setPlainText(", ".join(genre_names) if genre_names else "No genres listed.")
+
+        director_info = self.cast_crew_service.get_director_for_movie(self.tmdb_id)
+        self.director_text.setText(director_info['name'] if director_info else "Director information not available.")
+
+        cast_list = self.cast_crew_service.get_formatted_cast_list(self.tmdb_id)
+        self.cast_text.setPlainText(", ".join(cast_list) if cast_list else "Cast information not available.")
+
+        # --- Fetch and Populate Reviews ---
+        self.load_reviews()
+
+        # --- Check for Existing User Rating/Review (if logged in) ---
         if self.session_manager.is_logged_in():
-            self.rating_review_section.setVisible(True)
+            user_id = self.session_manager.get_current_user_id()
+            existing_rating = self.rating_service.get_user_rating_for_movie(user_id, self.tmdb_id)
+            existing_review = self.review_service.get_user_review_for_movie(user_id, self.tmdb_id)
 
-            # --- Rating Input ---
-            if self.rate_input is None: # Create only once
-                self.rate_input = QTextEdit()
-                self.rate_input.setMaximumHeight(30)
-                self.rate_input.setPlaceholderText("Enter rating (0-5)")
-                self.rate_button = QPushButton("Submit Rating")
-                self.rate_button.clicked.connect(self.submit_rating)
+            if existing_rating:
+                rating_val = float(existing_rating['rating'])
+                self.select_rating(rating_val, set_initial=True) # Pre-select the rating
 
-                rate_layout = QHBoxLayout()
-                rate_layout.addWidget(self.rate_input)
-                rate_layout.addWidget(self.rate_button)
-                self.rating_review_section.layout().insertLayout(0, QLabel("Rate this movie (0-5):"))
-                self.rating_review_section.layout().insertLayout(1, rate_layout)
+            if existing_review:
+                self.review_text_input.setPlainText(existing_review['review']) # Pre-fill the review text
 
-            # --- Review Input ---
-            if self.review_input is None: # Create only once
-                self.review_input = QTextEdit()
-                self.review_input.setMaximumHeight(80)
-                self.review_input.setPlaceholderText("Write your review here...")
-                self.review_submit_button = QPushButton("Submit Review")
-                self.review_submit_button.clicked.connect(self.submit_review)
+    def load_reviews(self):
+        """Fetches and displays the 3 most recent reviews."""
+        # Clear existing review widgets
+        while self.reviews_container.count():
+            child = self.reviews_container.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
 
-                review_layout = QVBoxLayout()
-                review_layout.addWidget(self.review_input)
-                review_layout.addWidget(self.review_submit_button)
-                self.rating_review_section.layout().insertLayout(2, QLabel("Write a review:"))
-                self.rating_review_section.layout().insertLayout(3, review_layout)
+        reviews = self.review_service.get_reviews_for_movie(self.tmdb_id)
 
-            # Load and display existing reviews (placeholder for now)
-            # This would require a service call to fetch reviews for this specific movie
-            # self.load_movie_reviews() # Implement this function later
-            self.reviews_display.setPlainText("Reviews for this movie will appear here once the review service is implemented.")
+        if not reviews:
+            no_reviews_label = QLabel("No reviews yet.")
+            self.reviews_container.addWidget(no_reviews_label)
+        else:
+            for review in reviews:
+                review_widget = QWidget()
+                review_layout = QVBoxLayout(review_widget)
 
+                # Reviewer and timestamp
+                reviewer_info = QLabel(f"<b>{review['email']}</b> on {review['timeStamp']}")
+                reviewer_info.setStyleSheet("font-size: 12px; color: gray;")
 
-    def submit_rating(self):
-        """Handles the submission of a new rating."""
+                # Review text
+                review_text = QTextEdit()
+                review_text.setPlainText(review['review'])
+                review_text.setReadOnly(True)
+                review_text.setMaximumHeight(80) # Limit height per review
+
+                review_layout.addWidget(reviewer_info)
+                review_layout.addWidget(review_text)
+
+                self.reviews_container.addWidget(review_widget)
+
+    def on_poster_load_finished(self, reply, poster_label, movie_title):
+        """Callback for loading the movie poster."""
+        if reply.error() == QNetworkReply.NoError:
+            image_data = reply.readAll()
+            pixmap = QPixmap()
+            pixmap.loadFromData(image_data)
+            if not pixmap.isNull():
+                scaled_pixmap = pixmap.scaled(300, 450, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                poster_label.setPixmap(scaled_pixmap)
+            else:
+                print(f"Could not load image data for movie '{movie_title}' from {reply.url().toString()}")
+                # --- NEW: Use helper from utils ---
+                load_default_poster(poster_label, size=(300, 450))
+                # --- END NEW ---
+        else:
+            print(f"Failed to load poster for '{movie_title}' from {reply.url().toString()}: {reply.errorString()}")
+            # --- NEW: Use helper from utils ---
+            load_default_poster(poster_label, size=(300, 450))
+            # --- END NEW ---
+        reply.deleteLater()
+
+    # Note: This helper is redundant now as load_default_poster from utils.py is used
+    # def load_default_poster(self, poster_label):
+    #     """Helper to load the default poster."""
+    #     pixmap = QPixmap(DEFAULT_POSTER_PATH)
+    #     if not pixmap.isNull():
+    #         scaled_pixmap = pixmap.scaled(300, 450, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    #         poster_label.setPixmap(scaled_pixmap)
+    #     else:
+    #         poster_label.setText("No Poster")
+
+    def select_rating(self, value, set_initial=False):
+        """Handles rating button selection."""
+        for i, btn in enumerate(self.rating_buttons):
+            btn.setChecked(i == value)
+        if not set_initial: # Only store if it's a user click, not initial set
+            self.selected_rating = value
+
+    def submit_rating_review(self):
+        """Handles submitting the user's rating and/or review."""
         if not self.session_manager.is_logged_in():
-            QMessageBox.warning(self, 'Not Logged In', 'You must be logged in to rate a movie.')
+            QMessageBox.warning(self, 'Not Logged In', 'You must be logged in to rate or review a movie.')
             return
 
-        try:
-            rating_str = self.rate_input.toPlainText().strip()
-            rating = float(rating_str)
-            if not (0 <= rating <= 5):
-                raise ValueError("Rating must be between 0 and 5.")
-        except ValueError as e:
-            QMessageBox.critical(self, 'Invalid Rating', f'Please enter a valid number between 0 and 5. Error: {e}')
-            return
+        user_id = self.session_manager.get_current_user_id()
+        rating_value = getattr(self, 'selected_rating', None) # Get the selected rating
+        review_text = self.review_text_input.toPlainText().strip()
 
-        # Call the rating service to submit the rating
-        # Example: result = self.rating_service.submit_rating(self.session_manager.get_current_user_id(), self.tmdb_id, rating)
-        # if result["success"]:
-        #     QMessageBox.information(self, 'Rating Submitted', result["message"])
-        #     # Optionally, reload movie details to show updated average
-        #     # self.load_movie_details()
-        # else:
-        #     QMessageBox.critical(self, 'Rating Failed', result["message"])
-        # For now, just show a message
-        QMessageBox.information(self, 'Rating Submitted (Simulated)', f'Rating {rating}/5 submitted for {self.movie_data["title"]}. (Service not implemented yet)')
+        # At least one action (rating or review) must be provided
+        if rating_value is None and not review_text:
+             QMessageBox.warning(self, 'No Input', 'Please provide a rating or a review.')
+             return
 
+        success = True
+        message_parts = []
 
-    def submit_review(self):
-        """Handles the submission of a new review."""
-        if not self.session_manager.is_logged_in():
-            QMessageBox.warning(self, 'Not Logged In', 'You must be logged in to review a movie.')
-            return
+        # Submit Rating if selected
+        if rating_value is not None:
+            rating_result = self.rating_service.add_rating(user_id, self.tmdb_id, rating_value)
+            success &= rating_result["success"]
+            message_parts.append(f"Rating: {rating_result['message']}")
 
-        review_text = self.review_input.toPlainText().strip()
-        if not review_text:
-            QMessageBox.warning(self, 'Empty Review', 'Review text cannot be empty.')
-            return
+        # Submit Review if provided
+        if review_text:
+            review_result = self.review_service.add_review(user_id, self.tmdb_id, review_text)
+            success &= review_result["success"]
+            message_parts.append(f"Review: {review_result['message']}")
 
-        # Call the review service to submit the review
-        # Example: result = self.review_service.submit_review(self.session_manager.get_current_user_id(), self.tmdb_id, review_text)
-        # if result["success"]:
-        #     QMessageBox.information(self, 'Review Submitted', result["message"])
-        #     # Optionally, clear the input and reload reviews display
-        #     self.review_input.clear()
-        #     # self.load_movie_reviews() # Implement this function later
-        # else:
-        #     QMessageBox.critical(self, 'Review Failed', result["message"])
-        # For now, just show a message
-        QMessageBox.information(self, 'Review Submitted (Simulated)', f'Review submitted for {self.movie_data["title"]}. (Service not implemented yet)')
+        if success:
+            QMessageBox.information(self, 'Success', " ".join(message_parts))
+            # Reload movie details to show updated average rating and review count
+            self.load_movie_details()
+            # Clear the input fields after successful submission
+            if rating_value is not None:
+                self.select_rating(0) # Deselect rating
+            if review_text:
+                self.review_text_input.clear()
+        else:
+            QMessageBox.critical(self, 'Error', " ".join(message_parts))
 
-
-# Example of standalone run (usually called from gui_home.py)
+# Example for standalone testing (usually called from gui_home.py)
 # if __name__ == '__main__':
 #     app = QApplication(sys.argv)
-#     # Simulate a logged-in session for testing
-#     from gui.session_manager import SessionManager
+#     # Simulate login for testing rating/review functionality
 #     session = SessionManager()
 #     session.login(1, "test@example.com", "user")
-#     detail_window = MovieDetailWindow(tmdb_id=123) # Example TMDB ID
+#     detail_window = MovieDetailWindow(862) # Example TMDB ID
 #     detail_window.show()
 #     sys.exit(app.exec_())
