@@ -1,9 +1,9 @@
 # database/repositories/rating_repository.py
 from database.db_connection import get_mysql_connection, close_connection
 from database.sql_queries import (
-    INSERT_RATING, UPDATE_RATING, DELETE_RATING,
+    GET_USER_RATINGS_AND_REVIEWS_UNIFIED, INSERT_RATING, UPDATE_RATING, DELETE_RATING,
     GET_RATING_BY_USER_AND_MOVIE, GET_RATINGS_FOR_MOVIE,
-    GET_SUM_AND_COUNT_RATINGS_FOR_MOVIE 
+    GET_SUM_AND_COUNT_RATINGS_FOR_MOVIE, GET_USER_RATINGS
 )
 
 class RatingRepository:
@@ -136,22 +136,66 @@ class RatingRepository:
             cursor.close()
             close_connection(connection)
 
-    def get_average_rating_for_movie(self, tmdb_id):
-        """Fetches the average rating and count for a specific movie."""
+    # def get_average_rating_for_movie(self, tmdb_id): THIS IS WRONG I THINK, THE SQL IS ALSO NOT USED
+    #     """Fetches the average rating and count for a specific movie."""
+    #     connection = get_mysql_connection()
+    #     if not connection:
+    #         return 0.0, 0
+
+    #     cursor = connection.cursor(dictionary=True)
+    #     try:
+    #         cursor.execute(GET_AVERAGE_RATING_FOR_MOVIE, (tmdb_id,))
+    #         result = cursor.fetchone()
+    #         avg_rating = result['avg_rating'] if result['avg_rating'] is not None else 0.0
+    #         count_rating = result['rating_count'] if result['rating_count'] is not None else 0
+    #         return float(avg_rating), int(count_rating)
+    #     except Exception as e:
+    #         print(f"Error fetching average rating for movie: {e}")
+    #         return 0.0, 0
+    #     finally:
+    #         cursor.close()
+    #         close_connection(connection)
+
+    def get_ratings_for_user_sorted_by_rating(self, user_id):
+        """
+        Fetches all ratings for a specific user, including movie titles, sorted by rating descending.
+        This method uses the existing GET_USER_RATINGS query.
+        """
         connection = get_mysql_connection()
         if not connection:
-            return 0.0, 0
+            return []
 
         cursor = connection.cursor(dictionary=True)
         try:
-            cursor.execute(GET_AVERAGE_RATING_FOR_MOVIE, (tmdb_id,))
-            result = cursor.fetchone()
-            avg_rating = result['avg_rating'] if result['avg_rating'] is not None else 0.0
-            count_rating = result['rating_count'] if result['rating_count'] is not None else 0
-            return float(avg_rating), int(count_rating)
+            cursor.execute(GET_USER_RATINGS, (user_id,))
+            ratings = cursor.fetchall()
+            return ratings
         except Exception as e:
-            print(f"Error fetching average rating for movie: {e}")
-            return 0.0, 0
+            print(f"Error fetching ratings for user {user_id}: {e}")
+            return []
+        finally:
+            cursor.close()
+            close_connection(connection)
+
+    #for profile page
+    def get_user_ratings_and_reviews_unified(self, user_id):
+        """
+        Fetches all ratings and reviews for a specific user, unified into a single list
+        sorted primarily by rating (descending), then by review timestamp (descending) for unrated movies with reviews.
+        """
+        connection = get_mysql_connection()
+        if not connection:
+            return []
+
+        cursor = connection.cursor(dictionary=True)
+        try:
+            # Execute the unified query, passing the user_id three times for the subquery
+            cursor.execute(GET_USER_RATINGS_AND_REVIEWS_UNIFIED, (user_id, user_id, user_id))
+            results = cursor.fetchall()
+            return results
+        except Exception as e:
+            print(f"Error fetching unified ratings and reviews for user {user_id}: {e}")
+            return []
         finally:
             cursor.close()
             close_connection(connection)

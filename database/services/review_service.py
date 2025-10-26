@@ -42,3 +42,10 @@ class ReviewService:
     def get_reviews_for_movie(self, tmdb_id):
         """Retrieves the 3 most recent reviews for a specific movie."""
         return self.review_repo.get_reviews_for_movie(tmdb_id)
+    
+    def get_reviews_for_user(self, user_id):
+        """
+        Retrieves all reviews written by a specific user, sorted by timestamp descending.
+        This method calls the corresponding method in the ReviewRepository.
+        """
+        return self.review_repo.get_reviews_for_user(user_id)

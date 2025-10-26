@@ -2,7 +2,8 @@
 from database.db_connection import get_mysql_connection, close_connection
 from database.sql_queries import (
     INSERT_REVIEW, UPDATE_REVIEW, DELETE_REVIEW,
-    GET_REVIEW_BY_USER_AND_MOVIE, GET_REVIEWS_FOR_MOVIE
+    GET_REVIEW_BY_USER_AND_MOVIE, GET_REVIEWS_FOR_MOVIE, 
+    GET_USER_REVIEWS
 )
 
 class ReviewRepository:
@@ -102,6 +103,27 @@ class ReviewRepository:
             return reviews
         except Exception as e:
             print(f"Error fetching reviews for movie: {e}")
+            return []
+        finally:
+            cursor.close()
+            close_connection(connection)
+
+    def get_reviews_for_user(self, user_id):
+        """
+        Fetches all reviews written by a specific user, sorted by timestamp descending.
+        This method uses the existing GET_USER_REVIEWS query.
+        """
+        connection = get_mysql_connection()
+        if not connection:
+            return []
+
+        cursor = connection.cursor(dictionary=True)
+        try:
+            cursor.execute(GET_USER_REVIEWS, (user_id,))
+            reviews = cursor.fetchall()
+            return reviews
+        except Exception as e:
+            print(f"Error fetching reviews for user {user_id}: {e}")
             return []
         finally:
             cursor.close()

@@ -1,5 +1,6 @@
 # In rating_service.py
 from database.repositories.rating_repository import RatingRepository
+from database.repositories.review_repository import ReviewRepository
 from database.repositories.movie_repository import MovieRepository
 from database.db_connection import get_mysql_connection, close_connection
 
@@ -109,7 +110,7 @@ class RatingService:
         # Consider renaming it to get_movie_sum_and_count or get_movie_aggregates.
         return self.rating_repo.get_sum_and_count_ratings_for_movie(tmdb_id)
 
-    # If you need the average frequently, add a helper method
+    # a helper method for avg
     def get_movie_average(self, tmdb_id):
         """Calculates and returns the average rating for a specific movie."""
         sum_ratings, count_ratings = self.get_movie_average_and_count(tmdb_id) # Call the renamed method
@@ -117,3 +118,44 @@ class RatingService:
             return sum_ratings / count_ratings
         else:
             return 0.0 # Or None, depending on desired behavior for unrated movies
+    
+    #for profile page
+    def get_user_ratings_and_reviews_for_profile(self, user_id):
+        """
+        Retrieves all ratings and reviews for a specific user, combined into a single list
+        sorted primarily by rating (descending), then by review timestamp (descending) for movies only reviewed.
+        This method now uses the unified query in the RatingRepository for efficiency.
+        """
+        # Fetch the combined and sorted list directly from the repository using the unified query
+        combined_results = self.rating_repo.get_user_ratings_and_reviews_unified(user_id)
+
+        # The repository query returns a list where each item has keys like:
+        # {'tmdbID': ..., 'title': ..., 'rating': ..., 'review_text': ..., 'rating_timeStamp': ..., 'review_timeStamp': ...}
+        # We just need to return this list, potentially reformatting it slightly to match the old structure
+        # if the GUI expects a specific format (e.g., 'type', 'timeStamp', 'review').
+        # The unified query already handles the complex sorting.
+
+        processed_list = []
+        for item in combined_results:
+            processed_item = {
+                'tmdbID': item['tmdbID'],
+                'title': item['title'],
+                # Use 'rating' from the unified result (could be a number or None)
+                'rating': item['rating'],
+                # Use 'review_text' from the unified result (could be text or None)
+                'review': item['review_text'],
+                # Decide which timestamp to use based on presence of rating/review
+                # Use review_timeStamp if rating is None (meaning it's a review-only entry)
+                # Use rating_timeStamp if rating exists (though rating_timeStamp might be NULL in the unified query if Ratings table lacks it)
+                'timeStamp': item['review_timeStamp'] if item['rating'] is None else item['rating_timeStamp']
+            }
+            # Determine the 'type' based on whether rating or review exists
+            if item['rating'] is not None:
+                processed_item['type'] = 'rating'
+            else:
+                processed_item['type'] = 'review'
+
+            processed_list.append(processed_item)
+
+        # The sorting is already done by the SQL query, so the processed_list is correctly ordered.
+        return processed_list

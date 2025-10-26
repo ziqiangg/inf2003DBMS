@@ -11,7 +11,9 @@ import sys
 from gui.session_manager import SessionManager
 from database.services.movie_service import MovieService
 from gui.gui_movie_detail import MovieDetailWindow
+from gui.gui_profile import ProfileWindow
 from gui.utils import is_placeholder_url, DEFAULT_POSTER_PATH, load_default_poster
+
 
 
 class HomeWindow(QWidget):
@@ -30,6 +32,7 @@ class HomeWindow(QWidget):
         self.current_search_term = ""
         # Initialize the Network Access Manager for async image loading
         self.network_manager = QNetworkAccessManager()
+        self.profile_window_ref = None
         self.init_ui()
         self.load_movies_page(self.current_page)
 
@@ -44,9 +47,12 @@ class HomeWindow(QWidget):
             self.user_label = QLabel(f"Logged in as: {self.session_manager.get_current_user_email()} ({self.session_manager.get_current_user_role()})")
             logout_button = QPushButton("Logout")
             logout_button.clicked.connect(self.logout)
+            profile_button = QPushButton("Profile")
+            profile_button.clicked.connect(self.open_profile_window)
             top_bar_layout.addWidget(self.user_label)
             top_bar_layout.addStretch() # Push logout button to the right
             top_bar_layout.addWidget(logout_button)
+
         else:
             # Show a generic message and a login button
             self.user_label = QLabel("Guest User") # Or just remove the user label entirely if desired
@@ -383,9 +389,15 @@ class HomeWindow(QWidget):
             self.user_label = QLabel(f"Logged in as: {self.session_manager.get_current_user_email()} ({self.session_manager.get_current_user_role()})")
             logout_button = QPushButton("Logout")
             logout_button.clicked.connect(self.logout)
+
+            profile_button = QPushButton("Profile")
+            profile_button.clicked.connect(self.open_profile_window)
+
             top_bar_layout.addWidget(self.user_label)
             top_bar_layout.addStretch() # Push logout button to the right
             top_bar_layout.addWidget(logout_button)
+            top_bar_layout.addWidget(profile_button)
+            
         else:
             # Show a generic message and a login button
             self.user_label = QLabel("Guest User") # Or just remove the user label entirely if desired
@@ -400,6 +412,35 @@ class HomeWindow(QWidget):
 
         # Store references to the new widgets if needed later (though update_ui_after_logout might be simpler)
         # self.top_bar_layout = top_bar_layout # Not strictly necessary here, but good practice if you access it elsewhere
+
+    def open_profile_window(self):
+        """Opens the profile window."""
+        # Check if a profile window is already open, optionally bring it to front
+        if self.profile_window_ref and not self.profile_window_ref.isHidden():
+             print("DEBUG: HomeWindow.open_profile_window: Profile window already open, raising it.")
+             self.profile_window_ref.raise_()
+             self.profile_window_ref.activateWindow()
+             return
+
+        # Create the new profile window instance
+        new_profile_window = ProfileWindow(session_manager=self.session_manager)
+        # Connect the window's destroyed signal BEFORE storing the reference
+        new_profile_window.destroyed.connect(self.on_profile_window_closed)
+        # Store the reference to the NEW window instance
+        self.profile_window_ref = new_profile_window
+        # Show the NEW window
+        self.profile_window_ref.show()
+    
+    def on_profile_window_closed(self):
+        """Called when the profile window is destroyed."""
+        print("DEBUG: HomeWindow.on_profile_window_closed: Profile window reference cleared.")
+        # It's possible this is called multiple times or if the reference was already cleared
+        # Check if the sender is the same object as the stored reference before clearing
+        # sender() returns the object that emitted the signal
+        sender_obj = self.sender() # Get the object that triggered the signal
+        if sender_obj == self.profile_window_ref:
+            # Only clear the reference if the destroyed object is the one we were tracking
+            self.profile_window_ref = None
 
     def logout(self):
         """Handles user logout."""
