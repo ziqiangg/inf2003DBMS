@@ -2,7 +2,8 @@
 from database.db_connection import get_mysql_connection, close_connection
 from database.sql_queries import (
     INSERT_RATING, UPDATE_RATING, DELETE_RATING,
-    GET_RATING_BY_USER_AND_MOVIE, GET_RATINGS_FOR_MOVIE, GET_AVERAGE_RATING_FOR_MOVIE
+    GET_RATING_BY_USER_AND_MOVIE, GET_RATINGS_FOR_MOVIE,
+    GET_SUM_AND_COUNT_RATINGS_FOR_MOVIE 
 )
 
 class RatingRepository:
@@ -112,6 +113,25 @@ class RatingRepository:
         except Exception as e:
             print(f"Error fetching ratings for movie: {e}")
             return []
+        finally:
+            cursor.close()
+            close_connection(connection)
+
+    def get_sum_and_count_ratings_for_movie(self, tmdb_id):
+        """Fetches the sum and count of ratings for a specific movie."""
+        connection = get_mysql_connection()
+        if not connection:
+            return 0.0, 0 # Return 0 for sum and 0 for count if connection fails
+        cursor = connection.cursor(dictionary=True)
+        try:
+            cursor.execute(GET_SUM_AND_COUNT_RATINGS_FOR_MOVIE, (tmdb_id,))
+            result = cursor.fetchone()
+            sum_rating = result['sum_ratings'] if result['sum_ratings'] is not None else 0.0
+            count_rating = result['rating_count'] if result['rating_count'] is not None else 0
+            return float(sum_rating), int(count_rating) # Ensure correct types
+        except Exception as e:
+            print(f"Error fetching sum and count ratings for movie {tmdb_id}: {e}")
+            return 0.0, 0 # Return 0 for sum and 0 for count on error
         finally:
             cursor.close()
             close_connection(connection)

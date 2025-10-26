@@ -271,8 +271,13 @@ class HomeWindow(QWidget):
             formatted_date = str(release_date)[:10] # Get just the date part if datetime
         else:
             formatted_date = "Unknown Date"
-        avg_rating = movie_data.get('totalRatings', 0)
-        num_ratings = movie_data.get('countRatings', 0)
+        sum_ratings = movie_data.get('totalRatings', 0) # Retrieves the SUM from the database row
+        num_ratings = movie_data.get('countRatings', 0) # Retrieves the COUNT from the database row
+        avg_rating = 0.0
+        if num_ratings > 0:
+            avg_rating = sum_ratings / num_ratings
+
+        # NEW: Display the CALCULATED average
         info_label.setText(f"Release: {formatted_date} | Avg: {avg_rating:.1f}/5 ({num_ratings} ratings)")
 
         # Add widgets to the layout

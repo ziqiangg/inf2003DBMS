@@ -257,8 +257,15 @@ class MovieDetailWindow(QWidget):
         runtime = movie_detail.get('runtime')
         self.runtime_label.setText(f"Runtime: {runtime} minutes" if runtime else "Runtime: Unknown")
 
-        avg_rating = movie_detail.get('totalRatings', 0)
-        count_rating = movie_detail.get('countRatings', 0)
+        sum_ratings = movie_detail.get('totalRatings', 0) # Get the SUM
+        count_rating = movie_detail.get('countRatings', 0) # Get the COUNT
+
+        # Calculate the average
+        avg_rating = 0.0
+        if count_rating > 0:
+            avg_rating = sum_ratings / count_rating
+
+        # Display the CALCULATED average
         self.avg_rating_label.setText(f"Average Rating: {avg_rating:.1f}/5 ({count_rating} ratings)")
 
         release_date = movie_detail.get('releaseDate')

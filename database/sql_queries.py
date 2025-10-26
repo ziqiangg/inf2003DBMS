@@ -181,9 +181,10 @@ SELECT userID, tmdbID, rating FROM Ratings WHERE userID = %s AND tmdbID = %s;
 GET_RATINGS_FOR_MOVIE = """
 SELECT userID, rating FROM Ratings WHERE tmdbID = %s;
 """
-# Query to get the average rating for a movie (used for updating Movies table)
-GET_AVERAGE_RATING_FOR_MOVIE = """
-SELECT AVG(rating) AS avg_rating, COUNT(rating) AS rating_count FROM Ratings WHERE tmdbID = %s;
+
+# Query to get total sum and count of ratings for a specific movie
+GET_SUM_AND_COUNT_RATINGS_FOR_MOVIE = """
+SELECT SUM(rating) AS sum_ratings, COUNT(rating) AS rating_count FROM Ratings WHERE tmdbID = %s;
 """
 
 # --- Review Queries ---
