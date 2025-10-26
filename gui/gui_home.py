@@ -19,18 +19,14 @@ class HomeWindow(QWidget):
         super().__init__()
         self.setWindowTitle('Movie Rating System - Home')
         self.setGeometry(100, 100, 1200, 800)
-
         self.session_manager = SessionManager()
         self.movie_service = MovieService()
-
         # Initialize current page state
         self.current_page = 1
         self.movies_per_page = 20
         self.max_pages = 10
-
         # Initialize the Network Access Manager for async image loading
         self.network_manager = QNetworkAccessManager()
-
         self.init_ui()
         self.load_movies_page(self.current_page)
 
@@ -211,9 +207,16 @@ class HomeWindow(QWidget):
         # Connect click event to open movie detail
         def open_detail():
             from gui.gui_movie_detail import MovieDetailWindow
+            print(f"DEBUG: gui_home.py open_detail: Creating MovieDetailWindow for tmdbID {movie_data['tmdbID']}")
             detail_window = MovieDetailWindow(movie_data['tmdbID']) # Pass the movie ID
-            detail_window.show()
-
+            print(f"DEBUG: gui_home.py open_detail: Attempting to show MovieDetailWindow")
+            try:
+                detail_window.show()
+                print(f"DEBUG: gui_home.py open_detail: Successfully called show() on MovieDetailWindow")
+            except Exception as e:
+                print(f"ERROR: gui_home.py open_detail: Exception occurred when showing MovieDetailWindow: {e}")
+                import traceback
+                traceback.print_exc() # Print the full traceback for detailed error info
         widget.mousePressEvent = lambda event: open_detail() # Simulate click on the whole widget
         poster_label.mousePressEvent = lambda event: open_detail() # Also allow click on poster
         title_label.mousePressEvent = lambda event: open_detail() # Also allow click on title
@@ -266,26 +269,63 @@ class HomeWindow(QWidget):
             self.load_movies_page(new_page)
 
     def open_login_window(self):
-        """Opens the login window."""
+        """Opens the login window and passes a reference to this HomeWindow instance."""
         # Import LoginWindow here to avoid circular import at module level
         from gui.gui_login import LoginWindow
-        self.login_window = LoginWindow()
+        # Pass 'self' (the HomeWindow instance) to the LoginWindow
+        self.login_window = LoginWindow(home_window_instance=self)
         self.login_window.show()
+
+    def update_ui_after_login(self):
+        """Updates the top bar UI elements based on the current session state."""
+        # Clear the existing top bar layout content (excluding the main movie grid and pagination)
+        # We'll recreate the top bar layout.
+        # Get the main layout
+        main_layout = self.layout()
+        # Remove the old top bar layout (assuming it's the first item)
+        old_top_bar = main_layout.itemAt(0)
+        if old_top_bar:
+            # Remove the layout item from the main layout
+            main_layout.removeItem(old_top_bar)
+            # Delete the widgets within the old layout
+            while old_top_bar.count():
+                child = old_top_bar.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+            old_top_bar.deleteLater()
+
+        # Create the new top bar layout based on the current session state
+        top_bar_layout = QHBoxLayout()
+        if self.session_manager.is_logged_in():
+            self.user_label = QLabel(f"Logged in as: {self.session_manager.get_current_user_email()} ({self.session_manager.get_current_user_role()})")
+            logout_button = QPushButton("Logout")
+            logout_button.clicked.connect(self.logout)
+            top_bar_layout.addWidget(self.user_label)
+            top_bar_layout.addStretch() # Push logout button to the right
+            top_bar_layout.addWidget(logout_button)
+        else:
+            # Show a generic message and a login button
+            self.user_label = QLabel("Guest User") # Or just remove the user label entirely if desired
+            login_button = QPushButton("Login / Register")
+            login_button.clicked.connect(self.open_login_window)
+            top_bar_layout.addWidget(self.user_label)
+            top_bar_layout.addStretch() # Push login button to the right
+            top_bar_layout.addWidget(login_button)
+
+        # Insert the new top bar layout back at the top (index 0)
+        main_layout.insertLayout(0, top_bar_layout)
+
+        # Store references to the new widgets if needed later (though update_ui_after_logout might be simpler)
+        # self.top_bar_layout = top_bar_layout # Not strictly necessary here, but good practice if you access it elsewhere
 
     def logout(self):
         """Handles user logout."""
         reply = QMessageBox.question(self, 'Logout', 'Are you sure you want to logout?',
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-
         if reply == QMessageBox.Yes:
             self.session_manager.logout()
-            # Optionally, reload the UI to reflect the logged-out state (e.g., update user label, hide logout button, show login button)
-            # For now, just close and reopen the home window to refresh the state
-            self.close()
-            # Re-open the home window (which will now show the login button)
-            # We need to pass the session manager or let the new instance create its own singleton
-            new_home_window = HomeWindow()
-            new_home_window.show()
+            # Update the UI to reflect the logged-out state
+            self.update_ui_after_login()
 
 
 # Example of how to run the home window (usually opened from gui_login.py after successful login)
