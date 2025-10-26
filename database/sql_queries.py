@@ -26,7 +26,7 @@ UPDATE Users SET email = NULL, passwordHash = NULL WHERE userID = %s;
 
 # -- Query to get movies for the home page with pagination, sorted by release date (newest first)
 GET_MOVIES_PAGINATED = """
-SELECT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, m.runtime, m.totalRatings, m.countRatings
+SELECT *
 FROM Movies m
 ORDER BY m.releaseDate DESC, m.tmdbID DESC -- Order by release date descending, then by ID descending as a secondary sort to ensure stability
 LIMIT %s OFFSET %s;
@@ -39,7 +39,7 @@ SELECT COUNT(*) as total_count FROM Movies;
 
 # You can keep any existing movie queries here if needed for the home page or other features
 GET_MOVIE_BY_ID = """
-SELECT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, m.runtime, m.totalRatings, m.countRatings
+SELECT *
 FROM Movies m
 WHERE m.tmdbID = %s;
 """
