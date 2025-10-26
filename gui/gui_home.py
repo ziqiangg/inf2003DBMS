@@ -4,11 +4,10 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
     QGridLayout, QMessageBox, QFrame, QTextEdit, QSizePolicy, QSpacerItem
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QUrl, QEventLoop
 from PyQt5.QtGui import QPixmap, QIcon
+from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 import sys
-# import requests # We might not need this anymore for posters, or use it carefully
-# from io import BytesIO # We might not need this anymore for posters
 from gui.session_manager import SessionManager
 from database.services.movie_service import MovieService
 from gui.gui_movie_detail import MovieDetailWindow # Assuming you will create this next
@@ -19,7 +18,6 @@ DEFAULT_POSTER_PATH = "images/no_poster.png" # Adjust path if stored elsewhere
 # Define placeholder patterns to check against
 PLACEHOLDER_PATTERNS = [
     "via.placeholder.com",
-    # "https://images-na.ssl-images-amazon.com/images/M/MV5B",
     # Add other known placeholder/invalid URL patterns here if found
 ]
 
@@ -43,6 +41,9 @@ class HomeWindow(QWidget):
         self.current_page = 1
         self.movies_per_page = 20
         self.max_pages = 10
+
+        # Initialize the Network Access Manager for async image loading
+        self.network_manager = QNetworkAccessManager()
 
         self.init_ui()
         self.load_movies_page(self.current_page)
@@ -172,44 +173,26 @@ class HomeWindow(QWidget):
             else:
                 poster_label.setText("No Poster") # Fallback if default image also fails
         else: # If poster_url is not a placeholder/invalid URL
-            try:
-                # Note: This synchronous request can still block the UI.
-                # For a production app, consider using QNetworkAccessManager for async loading.
-                import requests # Import here if needed only for this function
-                from io import BytesIO
-                response = requests.get(poster_url, timeout=5) # Add a timeout
-                if response.status_code == 200:
-                    pixmap = QPixmap()
-                    pixmap.loadFromData(response.content)
-                    scaled_pixmap = pixmap.scaled(200, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    poster_label.setPixmap(scaled_pixmap)
-                else:
-                    # Handle case where image URL is invalid or inaccessible (e.g., 404)
-                    print(f"Failed to load poster from {poster_url} (Status: {response.status_code})")
-                    pixmap = QPixmap(DEFAULT_POSTER_PATH) # Load default image
-                    if not pixmap.isNull():
-                        scaled_pixmap = pixmap.scaled(200, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                        poster_label.setPixmap(scaled_pixmap)
-                    else:
-                        poster_label.setText("No Poster") # Fallback if default image also fails
-            except requests.exceptions.RequestException as e:
-                # Handle network errors (timeouts, DNS failures, etc.)
-                print(f"Error loading poster for {movie_data.get('title', 'Unknown')}: {e}")
-                pixmap = QPixmap(DEFAULT_POSTER_PATH) # Load default image
-                if not pixmap.isNull():
-                    scaled_pixmap = pixmap.scaled(200, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    poster_label.setPixmap(scaled_pixmap)
-                else:
-                    poster_label.setText("No Poster") # Fallback if default image also fails
-            except Exception as e:
-                # Handle other potential errors during image loading
-                print(f"Unexpected error loading poster for {movie_data.get('title', 'Unknown')}: {e}")
-                pixmap = QPixmap(DEFAULT_POSTER_PATH) # Load default image
-                if not pixmap.isNull():
-                    scaled_pixmap = pixmap.scaled(200, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    poster_label.setPixmap(scaled_pixmap)
-                else:
-                    poster_label.setText("No Poster") # Fallback if default image also fails
+            # --- ASYNC LOADING ---
+            # Create a request object
+            request = QNetworkRequest(QUrl(poster_url))
+            # Set a short timeout for the request (optional, handled differently in async)
+            request.setTransferTimeout(5000) # Timeout in milliseconds (e.g., 5 seconds)
+
+            # Start the network request using the manager
+            # The finished signal will be emitted when the request completes (success, failure, timeout)
+            reply = self.network_manager.get(request)
+
+            # Connect the 'finished' signal of the reply object to a lambda
+            # This lambda captures the specific 'poster_label' widget for this movie
+            # and the 'movie_data' title for potential error logging.
+            # The lambda then calls the 'on_image_load_finished' method.
+            reply.finished.connect(
+                lambda: self.on_image_load_finished(reply, poster_label, movie_data.get('title', 'Unknown'))
+            )
+            # The label currently shows nothing or the old pixmap if reused. It will be updated by the callback.
+            # You could set a temporary loading image here if desired.
+            # --- END ASYNC LOADING ---
 
 
         # Movie Title
@@ -259,6 +242,45 @@ class HomeWindow(QWidget):
         # The widget-level event should handle most clicks.
 
         return widget
+
+    def on_image_load_finished(self, reply, poster_label, movie_title):
+        """
+        Callback function called when the QNetworkReply finishes.
+        Updates the specific poster_label with the loaded image or the default image.
+        """
+        # Check the status of the reply
+        if reply.error() == QNetworkReply.NoError: # Success
+            # Read the image data from the reply
+            image_data = reply.readAll()
+            # Create a QPixmap from the data
+            pixmap = QPixmap()
+            pixmap.loadFromData(image_data)
+            # Scale and set the pixmap on the specific label widget passed to this callback
+            if not pixmap.isNull():
+                scaled_pixmap = pixmap.scaled(200, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                poster_label.setPixmap(scaled_pixmap)
+            else:
+                # If QPixmap couldn't be created from data (unexpected), use default
+                print(f"Could not load image data for movie '{movie_title}' from {reply.url().toString()}")
+                self.load_default_poster(poster_label)
+        else: # Error (e.g., 404, timeout, network failure)
+            # Print the error for debugging (optional)
+            print(f"Failed to load poster for '{movie_title}' from {reply.url().toString()}: {reply.errorString()}")
+            # Load the default poster for the specific label
+            self.load_default_poster(poster_label)
+
+        # Clean up the reply object to free resources
+        reply.deleteLater()
+
+    def load_default_poster(self, poster_label):
+        """Helper function to load the default poster into a given label."""
+        pixmap = QPixmap(DEFAULT_POSTER_PATH)
+        if not pixmap.isNull():
+            scaled_pixmap = pixmap.scaled(200, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            poster_label.setPixmap(scaled_pixmap)
+        else:
+            poster_label.setText("No Poster")
+
 
     def change_page(self, new_page):
         """Changes the displayed movie page."""
