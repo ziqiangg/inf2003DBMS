@@ -1,5 +1,3 @@
-# gui/gui_home.py
-
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
     QGridLayout, QMessageBox, QFrame, QTextEdit, QSizePolicy, QSpacerItem, QLineEdit
@@ -8,6 +6,7 @@ from PyQt5.QtCore import Qt, QUrl # Added QUrl for potential link handling
 from PyQt5.QtGui import QPixmap, QIcon
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 import sys
+import traceback
 from gui.session_manager import SessionManager
 from gui.gui_signals import global_signals
 from database.services.movie_service import MovieService
@@ -20,21 +19,31 @@ from gui.utils import is_placeholder_url, DEFAULT_POSTER_PATH, load_default_post
 class HomeWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('Movie Rating System - Home')
-        self.setGeometry(100, 100, 1200, 800)
+        # Keep references to prevent garbage collection
+        self.detail_windows = []  # List to store all detail windows
+        self.network_manager = QNetworkAccessManager(self)  # Parent the manager to self
+        self.profile_window_ref = None
+        self.reply_references = {}  # Keep track of network replies
+        
+        # Initialize managers and services
         self.session_manager = SessionManager()
         self.movie_service = MovieService()
-        # Initialize current page state
+        
+        # Setup window properties
+        self.setWindowTitle('Movie Rating System - Home')
+        self.setGeometry(100, 100, 1200, 800)
+        
+        # Initialize state variables
         self.current_page = 1
         self.movies_per_page = 20
         self.max_pages = 10
-        # Track if we are in search mode
         self.search_mode = False
         self.current_search_term = ""
-        # Initialize the Network Access Manager for async image loading
-        self.network_manager = QNetworkAccessManager()
-        self.profile_window_ref = None
+        
+        # Connect signals
         global_signals.movie_data_updated.connect(self.on_movie_data_updated)
+        
+        # Initialize UI
         self.init_ui()
         self.load_movies_page(self.current_page)
 
@@ -129,27 +138,54 @@ class HomeWindow(QWidget):
     
     def perform_search(self):
         """Handles the search button click."""
-        search_term = self.search_input.text().strip()
-        if search_term:
-            print(f"DEBUG: Performing search for: '{search_term}'")
-            self.current_search_term = search_term
-            self.search_mode = True
-            self.current_page = 1 # Reset to first page for search results
-            self.load_search_results(search_term)
-            self.update_pagination_visibility() # Hide pagination controls during search
-        else:
-            # If search term is empty, clear the search results
-            self.clear_search()
+        try:
+            search_term = self.search_input.text().strip()
+            if search_term:
+                print(f"DEBUG: Performing search for: '{search_term}'")
+                self.current_search_term = search_term
+                self.search_mode = True
+                self.current_page = 1  # Reset to first page for search results
+                
+                # Clear existing movie widgets before loading search results
+                self.clear_movie_grid()
+                
+                # Load and display search results
+                self.load_search_results(search_term)
+                self.update_pagination_visibility()  # Hide pagination controls during search
+            else:
+                # If search term is empty, clear the search results
+                self.clear_search()
+        except Exception as e:
+            print(f"ERROR in perform_search: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # Show error message to user
+            QMessageBox.critical(self, "Search Error", 
+                               "An error occurred while searching. Please try again.")
 
     def clear_search(self):
         """Clears the search input and results, returning to pagination mode."""
-        print("DEBUG: Clearing search")
-        self.search_input.clear()
-        self.current_search_term = ""
-        self.search_mode = False
-        self.current_page = 1 # Reset to first page for pagination
-        self.load_movies_page(self.current_page) # Reload paginated movies
-        self.update_pagination_visibility() # Show pagination controls again
+        try:
+            print("DEBUG: Clearing search")
+            # Clear the search input
+            self.search_input.clear()
+            self.current_search_term = ""
+            self.search_mode = False
+            self.current_page = 1  # Reset to first page for pagination
+            
+            # Clear existing movie widgets
+            self.clear_movie_grid()
+            
+            # Reload paginated movies and show pagination controls
+            self.load_movies_page(self.current_page)
+            self.update_pagination_visibility()
+        except Exception as e:
+            print(f"ERROR in clear_search: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # Show error message to user
+            QMessageBox.critical(self, "Error", 
+                               "An error occurred while clearing the search. Please try again.")
 
     def update_pagination_visibility(self):
         """Shows or hides pagination controls based on search mode."""
@@ -163,33 +199,66 @@ class HomeWindow(QWidget):
             self.page_label.show()
             self.next_button.show()
 
+    def clear_movie_grid(self):
+        """Helper method to safely clear all widgets from the movie grid."""
+        try:
+            if self.movie_grid_layout is None:
+                return
+                
+            while self.movie_grid_layout.count():
+                item = self.movie_grid_layout.takeAt(0)
+                if item:
+                    widget = item.widget()
+                    if widget:
+                        widget.setParent(None)
+                        widget.deleteLater()
+            
+            # Process any pending events to ensure widgets are properly deleted
+            QApplication.processEvents()
+            
+        except Exception as e:
+            print(f"ERROR in clear_movie_grid: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
     def load_search_results(self, search_term):
         """Fetches search results and updates the UI."""
-        results = self.movie_service.search_movies_by_title(search_term)
-        print(f"DEBUG: Found {len(results)} results for search term '{search_term}'")
+        try:
+            results = self.movie_service.search_movies_by_title(search_term)
+            print(f"DEBUG: Found {len(results)} results for search term '{search_term}'")
 
-        # Clear existing movie widgets from the grid layout
-        while self.movie_grid_layout.count():
-            child = self.movie_grid_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
+            # Clear existing movie widgets
+            self.clear_movie_grid()
 
-        # Populate the grid with search results
-        if results:
-            row, col = 0, 0
-            for movie in results:
-                movie_widget = self.create_movie_widget(movie)
-                self.movie_grid_layout.addWidget(movie_widget, row, col)
-                col += 1
-                if col > 3: # Show 4 movies per row
-                    col = 0
-                    row += 1
-        else:
-            # Show a message if no results found
-            no_results_label = QLabel("No movies found matching your search.")
-            no_results_label.setAlignment(Qt.AlignCenter)
-            # Optionally set a fixed size or use a spacer to center it better
-            self.movie_grid_layout.addWidget(no_results_label, 0, 0, 1, 4) # Span 4 columns
+            # Populate the grid with search results
+            if results:
+                row, col = 0, 0
+                for movie in results:
+                    movie_widget = self.create_movie_widget(movie)
+                    if movie_widget:  # Only add if widget creation was successful
+                        self.movie_grid_layout.addWidget(movie_widget, row, col)
+                        col += 1
+                        if col > 3:  # Show 4 movies per row
+                            col = 0
+                            row += 1
+            else:
+                # Show a message if no results found
+                no_results_label = QLabel("No movies found matching your search.")
+                no_results_label.setAlignment(Qt.AlignCenter)
+                no_results_label.setStyleSheet("font-size: 14px; color: #666;")
+                self.movie_grid_layout.addWidget(no_results_label, 0, 0, 1, 4)  # Span 4 columns
+                
+            # Update the layout
+            self.scroll_widget.updateGeometry()
+            self.scroll_area.updateGeometry()
+            
+        except Exception as e:
+            print(f"ERROR in load_search_results: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # Show error message to user
+            QMessageBox.critical(self, "Search Error", 
+                               "An error occurred while loading search results. Please try again.")
 
     def load_movies_page(self, page_number):
         """Fetches movies for the given page and updates the UI."""
@@ -309,53 +378,51 @@ class HomeWindow(QWidget):
         layout.addWidget(info_label)
 
         # Connect click event to open movie detail
-        def open_detail():
-            from gui.gui_movie_detail import MovieDetailWindow
-            print(f"DEBUG: gui_home.py open_detail: Creating MovieDetailWindow for tmdbID {movie_data['tmdbID']}")
-            detail_window = MovieDetailWindow(movie_data['tmdbID']) # Pass the movie ID
-            print(f"DEBUG: gui_home.py open_detail: Attempting to show MovieDetailWindow")
-            try:
-                detail_window.show()
-                print(f"DEBUG: gui_home.py open_detail: Successfully called show() on MovieDetailWindow")
-            except Exception as e:
-                print(f"ERROR: gui_home.py open_detail: Exception occurred when showing MovieDetailWindow: {e}")
-                import traceback
-                traceback.print_exc() # Print the full traceback for detailed error info
-        widget.mousePressEvent = lambda event: open_detail() # Simulate click on the whole widget
-        poster_label.mousePressEvent = lambda event: open_detail() # Also allow click on poster
-        title_label.mousePressEvent = lambda event: open_detail() # Also allow click on title
+        movie_id = movie_data['tmdbID']  # Store the ID in a local variable
+        
+        def open_detail(event):
+                    try:
+                        print(f"DEBUG: gui_home.py open_detail: Creating MovieDetailWindow for tmdbID {movie_id}")
+                        detail_window = MovieDetailWindow(movie_id)
+                        detail_window.destroyed.connect(lambda: self.detail_windows.remove(detail_window) if detail_window in self.detail_windows else None)
+                        self.detail_windows.append(detail_window)
+                        detail_window.show()
+                    except Exception as e:
+                        print(f"ERROR: Failed to open movie detail window: {str(e)}")
+                        traceback.print_exc()
+                        QMessageBox.critical(self, "Error", "Failed to open movie details. Please try again.")        # Use QWidget's method to ignore parameter
+        widget.mousePressEvent = open_detail
+        poster_label.mousePressEvent = open_detail
+        title_label.mousePressEvent = open_detail
         # Note: QTextEdit and QLabel are not focusable by default, so mousePressEvent might not work directly on them if they contain other focusable elements.
         # The widget-level event should handle most clicks.
 
         return widget
 
     def on_image_load_finished(self, reply, poster_label, movie_title):
-        """
-        Callback function called when the QNetworkReply finishes.
-        Updates the specific poster_label with the loaded image or the default image.
-        """
-        # Check the status of the reply
-        if reply.error() == QNetworkReply.NoError: # Success
-            # Read the image data from the reply
-            image_data = reply.readAll()
-            # Create a QPixmap from the data
-            pixmap = QPixmap()
-            pixmap.loadFromData(image_data)
-            # Scale and set the pixmap on the specific label widget passed to this callback
-            if not pixmap.isNull():
-                scaled_pixmap = pixmap.scaled(200, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                poster_label.setPixmap(scaled_pixmap)
+        try:
+            if reply.error() == QNetworkReply.NoError:
+                image_data = reply.readAll()
+                pixmap = QPixmap()
+                pixmap.loadFromData(image_data)
+                if not pixmap.isNull():
+                    scaled_pixmap = pixmap.scaled(200, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    poster_label.setPixmap(scaled_pixmap)
+                else:
+                    load_default_poster(poster_label, size=(200, 300))
             else:
-                # If QPixmap couldn't be created from data (unexpected), use default
-                print(f"Could not load image data for movie '{movie_title}' from {reply.url().toString()}")
                 load_default_poster(poster_label, size=(200, 300))
-        else: # Error (e.g., 404, timeout, network failure)
-            # Print the error for debugging (optional)
-            # print(f"Failed to load poster for '{movie_title}' from {reply.url().toString()}: {reply.errorString()}")
-            # Load the default poster for the specific label
+            
+            # Clean up the reply
+            reply_id = reply.url().toString()
+            if reply_id in self.reply_references:
+                del self.reply_references[reply_id]
+            reply.deleteLater()
+            
+        except Exception as e:
+            print(f"Error in on_image_load_finished: {str(e)}")
+            traceback.print_exc()
             load_default_poster(poster_label, size=(200, 300))
-        # Clean up the reply object to free resources
-        reply.deleteLater()
 
     def load_default_poster(self, poster_label):
         """Helper function to load the default poster into a given label."""
@@ -430,33 +497,59 @@ class HomeWindow(QWidget):
         # self.top_bar_layout = top_bar_layout # Not strictly necessary here, but good practice if you access it elsewhere
 
     def open_profile_window(self):
-        """Opens the profile window."""
-        # Check if a profile window is already open, optionally bring it to front
-        if self.profile_window_ref and not self.profile_window_ref.isHidden():
-             print("DEBUG: HomeWindow.open_profile_window: Profile window already open, raising it.")
-             self.profile_window_ref.raise_()
-             self.profile_window_ref.activateWindow()
-             return
+        try:
+            if self.profile_window_ref and not self.profile_window_ref.isHidden():
+                print("DEBUG: HomeWindow.open_profile_window: Profile window already open, raising it.")
+                self.profile_window_ref.raise_()
+                self.profile_window_ref.activateWindow()
+                return
 
-        # Create the new profile window instance
-        new_profile_window = ProfileWindow(session_manager=self.session_manager)
-        # Connect the window's destroyed signal BEFORE storing the reference
-        new_profile_window.destroyed.connect(self.on_profile_window_closed)
-        # Store the reference to the NEW window instance
-        self.profile_window_ref = new_profile_window
-        # Show the NEW window
-        self.profile_window_ref.show()
+            new_profile_window = ProfileWindow(session_manager=self.session_manager)
+            new_profile_window.destroyed.connect(self.on_profile_window_closed)
+            self.profile_window_ref = new_profile_window
+            self.profile_window_ref.show()
+            
+        except Exception as e:
+            print(f"Error in open_profile_window: {str(e)}")
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", "Failed to open profile window. Please try again.")
     
+    def closeEvent(self, event):
+        try:
+            # Disconnect signals
+            global_signals.movie_data_updated.disconnect(self.on_movie_data_updated)
+            
+            # Clean up any pending network replies
+            for reply in self.reply_references.values():
+                if reply and not reply.isFinished():
+                    reply.abort()
+            self.reply_references.clear()
+            
+            # Close all detail windows
+            for window in self.detail_windows[:]:  # Use slice copy to avoid modification during iteration
+                window.close()
+            self.detail_windows.clear()
+            
+            # Close profile window if open
+            if self.profile_window_ref:
+                self.profile_window_ref.close()
+                self.profile_window_ref = None
+                
+        except Exception as e:
+            print(f"Error during HomeWindow cleanup: {str(e)}")
+            traceback.print_exc()
+        
+        super().closeEvent(event)
+
     def on_profile_window_closed(self):
-        """Called when the profile window is destroyed."""
-        print("DEBUG: HomeWindow.on_profile_window_closed: Profile window reference cleared.")
-        # It's possible this is called multiple times or if the reference was already cleared
-        # Check if the sender is the same object as the stored reference before clearing
-        # sender() returns the object that emitted the signal
-        sender_obj = self.sender() # Get the object that triggered the signal
-        if sender_obj == self.profile_window_ref:
-            # Only clear the reference if the destroyed object is the one we were tracking
-            self.profile_window_ref = None
+        try:
+            sender_obj = self.sender()
+            if sender_obj == self.profile_window_ref:
+                print("DEBUG: HomeWindow.on_profile_window_closed: Profile window reference cleared.")
+                self.profile_window_ref = None
+        except Exception as e:
+            print(f"Error in on_profile_window_closed: {str(e)}")
+            traceback.print_exc()
 
     def logout(self):
         """Handles user logout."""

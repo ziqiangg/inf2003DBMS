@@ -1,5 +1,6 @@
 # gui/gui_movie_detail.py
 import sys
+import traceback
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit,
     QFormLayout, QScrollArea, QFrame, QMessageBox, QGridLayout, QSpacerItem
@@ -19,20 +20,26 @@ from gui.utils import is_placeholder_url, DEFAULT_POSTER_PATH, load_default_post
 
 class MovieDetailWindow(QWidget):
     def __init__(self, tmdb_id):
-        # print(f"DEBUG: MovieDetailWindow.__init__ called with tmdb_id: {tmdb_id}")
-        super().__init__()
-        self.tmdb_id = tmdb_id
-        self.session_manager = SessionManager()
-        self.movie_service = MovieService()
-        self.rating_service = RatingService()
-        self.review_service = ReviewService()
-        self.genre_service = GenreService()
-        self.cast_crew_service = CastCrewService()
+        try:
+            super().__init__()
+            self.tmdb_id = tmdb_id
+            self.session_manager = SessionManager()
+            self.movie_service = MovieService()
+            self.rating_service = RatingService()
+            self.review_service = ReviewService()
+            self.genre_service = GenreService()
+            self.cast_crew_service = CastCrewService()
 
-        self.network_manager = QNetworkAccessManager()
+            self.network_manager = QNetworkAccessManager()
+            self.reply_references = {}  # Keep track of network replies
 
-        self.setWindowTitle('Movie Details')
-        self.setGeometry(150, 150, 1000, 800)
+            self.setWindowTitle('Movie Details')
+            self.setGeometry(150, 150, 1000, 800)
+            
+        except Exception as e:
+            print(f"Error in MovieDetailWindow initialization: {str(e)}")
+            traceback.print_exc()
+            raise
 
         #print("DEBUG: About to call self.init_ui()")
         self.init_ui()
@@ -46,10 +53,29 @@ class MovieDetailWindow(QWidget):
         # print("DEBUG: MovieDetailWindow.showEvent called - Window is being shown.")
         super().showEvent(event)
 
-    # Debug closeEvent
     def closeEvent(self, event):
-        # print("DEBUG: MovieDetailWindow.closeEvent called - Window is about to close.")
-        event.accept() # Accept the close event, allowing the window to close
+        try:
+            print("DEBUG: MovieDetailWindow.closeEvent called - Window is about to close.")
+            
+            # Disconnect from global signals
+            try:
+                global_signals.movie_data_updated.disconnect(self.on_movie_data_updated)
+            except:
+                pass  # Signal might not be connected
+            
+            # Clean up network replies
+            for reply in self.reply_references.values():
+                if reply and not reply.isFinished():
+                    reply.abort()
+            self.reply_references.clear()
+            
+            # Accept the close event
+            event.accept()
+            
+        except Exception as e:
+            print(f"Error during MovieDetailWindow cleanup: {str(e)}")
+            traceback.print_exc()
+            event.accept()
 
     def init_ui(self):
         # print("DEBUG: MovieDetailWindow.init_ui() called")
