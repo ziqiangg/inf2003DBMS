@@ -5,173 +5,249 @@ A **hybrid DBMS** that combines **MySQL** and **MongoDB** to efficiently manage 
 
 ## Architecture
 - **MySQL (Relational):** Structured data including movies, users, ratings, genres, reviews
-- **MongoDB (Non-Relational):** Unstructured data inclding movie crew and cast
+- **MongoDB (Non-Relational):** Unstructured data including movie crew and cast information
 
 ## Key Features
 - **Multi-tier user system:** Guest, registered user, and admin roles with granular permissions
 - **Performance optimization:** Denormalized rating aggregations for sub-second query response
 - **Scalable design:** Hybrid approach leverages strengths of both SQL and NoSQL databases
 - **Data integrity:** MySQL ensures ACID compliance for critical transactional data
+- **Real-time rating system:** Instant updates with aggregated movie ratings
+- **Comprehensive movie details:** Including release dates, runtime, and overview
+- **User review system:** Timestamped reviews with user authentication
 
 ## 🗃️ Database Schema
 
-### Tables OLD NEED TO UPDATE
-
-#### Movies 
+### Movies
 ```sql
 CREATE TABLE Movies (
-    tmdbID INT PRIMARY KEY,
-    title TEXT,
-    link TEXT,
-    release_date TEXT,
-    runtime INT,
-    poster TEXT,
-    overview TEXT,  
-    totalRatings DOUBLE DEFAULT 0,
-    countRatings INT DEFAULT 0
+  tmdbID int NOT NULL,
+  title text,
+  link text,
+  runtime int DEFAULT NULL,
+  poster text,
+  overview text,
+  totalRatings double NOT NULL DEFAULT '0',
+  countRatings int NOT NULL DEFAULT '0',
+  releaseDate date DEFAULT NULL,
+  PRIMARY KEY (tmdbID)
 );
 ```
 
-#### Genre
+### Genre
 ```sql
 CREATE TABLE Genre (
-    genreID INT PRIMARY KEY,
-    genreName VARCHAR(100)
+  genreID int NOT NULL,
+  genreName varchar(100) DEFAULT NULL,
+  PRIMARY KEY (genreID)
 );
 ```
 
-#### Movie_Genre
+### Movie_Genre
 ```sql
 CREATE TABLE Movie_Genre (
-    tmdbID INT,
-    genreID INT,
-    PRIMARY KEY (tmdbID, genreID),
-    FOREIGN KEY (tmdbID) REFERENCES Movies(tmdbID),
-    FOREIGN KEY (genreID) REFERENCES Genre(genreID)
+  tmdbID int NOT NULL,
+  genreID int NOT NULL,
+  PRIMARY KEY (tmdbID,genreID),
+  CONSTRAINT fk_movie_genre_genreid FOREIGN KEY (genreID) 
+    REFERENCES Genre (genreID) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_movie_genre_tmdbid FOREIGN KEY (tmdbID) 
+    REFERENCES Movies (tmdbID) ON DELETE CASCADE ON UPDATE CASCADE
 );
 ```
 
-#### Ratings
-```sql
-CREATE TABLE Ratings (
-    userID INT,
-    tmdbID INT,
-    rating DOUBLE,
-    PRIMARY KEY (userID, tmdbID),
-    FOREIGN KEY (tmdbID) REFERENCES Movies(tmdbID),
-    FOREIGN KEY (userID) REFERENCES Users(userID)
-);
-```
-
-#### Reviews
-```sql
-CREATE TABLE Reviews (
-    userID INT,
-    tmdbID INT,
-    review TEXT,
-    PRIMARY KEY (userID, tmdbID),
-    FOREIGN KEY (tmdbID) REFERENCES Movies(tmdbID),
-    FOREIGN KEY (userID) REFERENCES Users(userID)
-);
-```
-
-#### Users
+### Users
 ```sql
 CREATE TABLE Users (
-    userID INT PRIMARY KEY AUTO_INCREMENT,
-    passwordHash VARCHAR(255) NOT NULL,
-    Email VARCHAR(255) UNIQUE NOT NULL,
-    roles ENUM('user', 'admin') DEFAULT 'user'
+  userID int NOT NULL AUTO_INCREMENT,
+  passwordHash varchar(255) NOT NULL,
+  email varchar(255) NOT NULL,
+  role varchar(5) NOT NULL DEFAULT 'user',
+  PRIMARY KEY (userID),
+  UNIQUE KEY Email (email),
+  CONSTRAINT Users_chk_1 CHECK (role in ('user','admin'))
+);
+```
+
+### Ratings
+```sql
+CREATE TABLE Ratings (
+  userID int NOT NULL,
+  tmdbID int NOT NULL,
+  rating decimal(2,1) DEFAULT NULL,
+  PRIMARY KEY (userID,tmdbID),
+  CONSTRAINT fk_ratings_tmdbid FOREIGN KEY (tmdbID) 
+    REFERENCES Movies (tmdbID) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_ratings_userid FOREIGN KEY (userID) 
+    REFERENCES Users (userID) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT Ratings_chk_1 CHECK (rating >= 0 AND rating <= 5)
+);
+```
+
+### Reviews
+```sql
+CREATE TABLE Reviews (
+  userID int NOT NULL,
+  tmdbID int NOT NULL,
+  review text,
+  timeStamp datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (userID,tmdbID),
+  CONSTRAINT fk_reviews_tmdbid FOREIGN KEY (tmdbID) 
+    REFERENCES Movies (tmdbID) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_reviews_userid FOREIGN KEY (userID) 
+    REFERENCES Users (userID) ON DELETE RESTRICT ON UPDATE CASCADE
 );
 ```
 
 ## 🚀 Setup Instructions
 
+### Prerequisites
+- Python 3.12 or higher
+- MySQL Server 8.0 or higher
+- MongoDB 7.0 or higher
+- Git
+
 ### Installation
 
 1. **Clone the repository**
 ```bash
-   git clone [https://github.com/FCSIT/database]
-   cd database
+git clone https://github.com/ziqiangg/inf2003DBMS.git
+cd inf2003DBMS
 ```
 
-2. **Install required dependencies**
+2. **Create a Python virtual environment**
 ```bash
-   python -m pip install -r requirements.txt
+python -m venv venv
 ```
-3. **Create database**
+
+3. **Activate the virtual environment**
+- Windows:
+```bash
+.\venv\Scripts\activate
+```
+- Unix/MacOS:
+```bash
+source venv/bin/activate
+```
+
+4. **Install required dependencies**
+```bash
+pip install -r requirements.txt
+```
+
+5. **Configure the database connections**
+- Edit `database/db_connection.py` for MySQL settings
+- Edit `database/db_mongo_connection.py` for MongoDB settings
+
+6. **Initialize the databases**
+- Create MySQL database:
 ```sql
-   CREATE DATABASE INF2003_DBS_P1_20;
-   USE INF2003_DBS_P1_20;
+CREATE DATABASE INF2003_DBS_P1_20;
+USE INF2003_DBS_P1_20;
 ```
-4. **Run setup script**
+- Run the schema creation scripts in MySQL Workbench or command line
+
+### Testing the Setup
+
+1. **Test database connections**
 ```bash
-   mysql -u root -p INF2003_DBS_P1_20 < schema.sql
+python test_connections.py
+```
+This will verify both MySQL and MongoDB connections are working properly.
+
+## 📱 Using the Application
+
+### Starting the Application
+```bash
+python main.py
 ```
 
-## Testing Connection
+### User Roles and Features
 
-Run 2 files to test your database connections:
+#### Guest Users
+- Browse movies
+- View movie details and ratings
+- Search for movies by title
+- View aggregated ratings
 
-- `test.py` - Check your connection to SQL Workbench
-- `test_mongodb.py` - Check your connection to MongoDB
+#### Registered Users (Additional Features)
+- Rate movies (0-5 stars)
+- Write movie reviews
+- Edit/delete own ratings and reviews
+- Maintain a personal profile
 
-This is to check your connection to both SQL Workbench & MongoDB.
+#### Administrators (Additional Features)
+- Manage user accounts
+- Moderate reviews
+- Add/edit movie information
+- Access system statistics
 
----
+### Main Features
 
-## Database Folder
+1. **Movie Browsing**
+   - Navigate through pages of movies
+   - Filter by genre
+   - Sort by rating, release date
+   - Search by title
 
-### Files:
-- `connection` - SQL database connection settings
-- `mongodb_connection` - MongoDB connection settings
+2. **Movie Details**
+   - View comprehensive movie information
+   - See poster, runtime, and release date
+   - Read user reviews
+   - Check average rating
 
-**Contains:** All the IP addresses and access role accounts
+3. **User System**
+   - Register new account
+   - Login/logout functionality
+   - Profile management
+   - Password security
 
----
+4. **Rating System**
+   - Rate movies from 0 to 5 stars
+   - View personal rating history
+   - See aggregated ratings
+   - Rating restrictions and validations
 
-## Utils Folder
+5. **Review System**
+   - Write detailed reviews
+   - Edit/delete own reviews
+   - View review history
+   - Timestamps for all reviews
 
-### Purpose:
-Prepare SQL statements (it is a check role and SQL instead of letting user directly use SQL)
+## 🔧 Troubleshooting
 
-### Function:
-- Role validation before SQL execution
-- Security layer for database operations
-- Prevents direct SQL access by users
+1. **Connection Issues**
+   - Verify database credentials in configuration files
+   - Check if MySQL and MongoDB services are running
+   - Ensure correct IP addresses and ports are configured
 
----
+2. **Interface Issues**
+   - Verify PyQt5 installation
+   - Check for proper virtual environment activation
+   - Clear application cache if needed
 
-## Queries & Pre_function Folders
+3. **Database Errors**
+   - Verify schema installation
+   - Check user permissions
+   - Validate data integrity
 
-### Queries:
-- **Purpose:** SQL statements for different user roles
-- **Contains:** Role-based SQL queries (guest, user, admin)
+## Project Structure
 
-### Pre_function:
-- **Purpose:** Prepare functions to display if linking to MongoDB
-- **Function:** Bridge between SQL and MongoDB operations
+### `/database`
+- Database connection and configuration files
+- Repository classes for data access
+- Service classes for business logic
 
----
+### `/gui`
+- `gui_home.py` - Main application window
+- `gui_movie_detail.py` - Movie details page
+- `gui_profile.py` - User profile management
+- Other UI component files
 
-## GUI Folder
-
-### Main Files:
-
-#### `gui_main.py`
-- **Purpose:** Store tabs
-- **Function:** Main application window with tab management
-
-#### `gui_home.py`
-- **Purpose:** The main page
-- **Function:** Home dashboard and primary navigation
-
-#### Other GUI Files:
-- Store UI of individual pages
-- Applied to `gui_main` & `gui_home`
-- Each file handles specific page functionality
-
----
+### `/images`
+- Application assets
+- Movie posters
+- UI elements
 
 ## Project Architecture
 ![Schema Diagram](images/schema.png)
