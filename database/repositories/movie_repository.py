@@ -81,7 +81,7 @@ class MovieRepository:
             cursor.close()
             close_connection(connection)
 
-    def search_movies(self, search_term=None, genre=None, year=None):
+    def search_movies(self, search_term=None, genre=None, year=None, min_avg_rating=None):
         """Searches movies by optional title, genre and year filters.
 
         If all filters are None/empty, returns an empty list (no-op).
@@ -97,13 +97,18 @@ class MovieRepository:
             genre = genre.strip() if isinstance(genre, str) and genre.strip() != "" else None
         if year is not None:
             # allow year as string or int
+            # also allow year to be a tuple (min_year, max_year) handled below
             try:
-                year = int(year)
+                if isinstance(year, (list, tuple)):
+                    # leave as-is, repository will process range
+                    pass
+                else:
+                    year = int(year)
             except Exception:
                 year = None
 
         # If no filters provided, return empty list to avoid accidental full scans
-        if not search_term and not genre and not year:
+        if not search_term and not genre and not year and min_avg_rating is None:
             return []
 
         connection = get_mysql_connection()
@@ -129,9 +134,48 @@ class MovieRepository:
             if genre:
                 where_clauses.append("g.genreName = %s")
                 params.append(genre)
-            if year:
-                where_clauses.append("YEAR(m.releaseDate) = %s")
-                params.append(year)
+            # Year filter: support single year, tuple/list ranges, or None
+            if isinstance(year, (list, tuple)) and len(year) == 2:
+                min_year, max_year = year
+                try:
+                    min_year = int(min_year) if min_year is not None else None
+                except Exception:
+                    min_year = None
+                try:
+                    max_year = int(max_year) if max_year is not None else None
+                except Exception:
+                    max_year = None
+
+                if min_year is not None and max_year is not None:
+                    if min_year == max_year:
+                        where_clauses.append("YEAR(m.releaseDate) = %s")
+                        params.append(min_year)
+                    else:
+                        where_clauses.append("YEAR(m.releaseDate) BETWEEN %s AND %s")
+                        params.extend([min_year, max_year])
+                elif min_year is not None:
+                    where_clauses.append("YEAR(m.releaseDate) >= %s")
+                    params.append(min_year)
+                elif max_year is not None:
+                    where_clauses.append("YEAR(m.releaseDate) <= %s")
+                    params.append(max_year)
+            elif year:
+                try:
+                    year_int = int(year)
+                    where_clauses.append("YEAR(m.releaseDate) = %s")
+                    params.append(year_int)
+                except Exception:
+                    pass
+
+            # Minimum average rating filter (uses stored totalRatings/countRatings)
+            if min_avg_rating is not None:
+                try:
+                    min_avg = float(min_avg_rating)
+                    # Use CASE to avoid division by zero
+                    where_clauses.append("(CASE WHEN m.countRatings > 0 THEN m.totalRatings / m.countRatings ELSE 0 END) >= %s")
+                    params.append(min_avg)
+                except Exception:
+                    pass
 
             if where_clauses:
                 query += " WHERE " + " AND ".join(where_clauses)

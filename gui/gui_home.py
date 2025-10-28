@@ -2,7 +2,8 @@
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
-    QGridLayout, QMessageBox, QFrame, QTextEdit, QSizePolicy, QSpacerItem, QLineEdit, QComboBox
+    QGridLayout, QMessageBox, QFrame, QTextEdit, QSizePolicy, QSpacerItem, QLineEdit, QComboBox,
+    QProgressDialog
 )
 from PyQt5.QtCore import Qt, QUrl # Added QUrl for potential link handling
 from PyQt5.QtGui import QPixmap, QIcon
@@ -30,6 +31,7 @@ class HomeWindow(QWidget):
         # Current filter state for searches
         self.current_genre = None
         self.current_year = None
+        self.current_rating = None
         # Map active QNetworkReply objects to (label_ref, movie_title) so handlers
         # can find the right widget when signals arrive. This helps avoid lambda
         # closures which can sometimes lead to duplicate signal handling.
@@ -44,6 +46,9 @@ class HomeWindow(QWidget):
         # Initialize the Network Access Manager for async image loading
         self.network_manager = QNetworkAccessManager()
         self.profile_window_ref = None
+        # Image loading progress tracking
+        self._pending_images_total = 0
+        self._pending_images_done = 0
         global_signals.movie_data_updated.connect(self.on_movie_data_updated)
         self.init_ui()
         self.load_movies_page(self.current_page)
@@ -121,6 +126,14 @@ class HomeWindow(QWidget):
             for y in range(current_year, current_year-30, -1):
                 self.year_combo.addItem(str(y))
 
+        # Average rating dropdown (minimum average rating)
+        self.rating_combo = QComboBox()
+        self.rating_combo.addItem("Any Rating")
+        # Options represent minimum average rating threshold
+        rating_options = ["0+", "1+", "2+", "3+", "4+", "5"]
+        for r in rating_options:
+            self.rating_combo.addItem(r)
+
         search_button = QPushButton("Search")
         clear_search_button = QPushButton("Clear") # Add a clear button
 
@@ -130,6 +143,7 @@ class HomeWindow(QWidget):
         search_layout.addWidget(self.search_input)
         search_layout.addWidget(self.genre_combo)
         search_layout.addWidget(self.year_combo)
+        search_layout.addWidget(self.rating_combo)
         search_layout.addWidget(search_button)
         search_layout.addWidget(clear_search_button) # Add the clear button
         main_layout.addLayout(search_layout)
@@ -165,6 +179,69 @@ class HomeWindow(QWidget):
         # main_layout.addLayout(self.page_buttons_layout) (REMOVED)
 
         self.setLayout(main_layout)
+
+    # --- Loading helpers ---
+    def show_loading(self, message="Loading...", total=None):
+        """Show an indeterminate, modal progress dialog while loading data."""
+        try:
+            if getattr(self, 'loading_dialog', None) is None:
+                # If total is provided, create a determinate dialog
+                if total is not None:
+                    self.loading_dialog = QProgressDialog(message, None, 0, int(total), self)
+                else:
+                    self.loading_dialog = QProgressDialog(message, None, 0, 0, self)
+                self.loading_dialog.setWindowTitle("Please wait")
+                self.loading_dialog.setWindowModality(Qt.ApplicationModal)
+                # Remove cancel button
+                try:
+                    self.loading_dialog.setCancelButton(None)
+                except Exception:
+                    pass
+                self.loading_dialog.setMinimumDuration(0)
+            else:
+                self.loading_dialog.setLabelText(message)
+                if total is not None:
+                    try:
+                        self.loading_dialog.setRange(0, int(total))
+                    except Exception:
+                        pass
+            self.loading_dialog.show()
+            # Ensure the dialog appears immediately
+            QApplication.processEvents()
+        except Exception as e:
+            print(f"DEBUG: show_loading failed: {e}")
+
+    def hide_loading(self):
+        """Hide and destroy the loading dialog if present."""
+        try:
+            if getattr(self, 'loading_dialog', None):
+                self.loading_dialog.hide()
+                self.loading_dialog.deleteLater()
+                self.loading_dialog = None
+        except Exception as e:
+            print(f"DEBUG: hide_loading failed: {e}")
+
+    def _advance_image_progress(self):
+        """Advance the image-loading progress bar and hide when complete."""
+        try:
+            # Only update if we are tracking images
+            if getattr(self, '_pending_images_total', 0) <= 0:
+                return
+            self._pending_images_done += 1
+            # Update dialog if present
+            dlg = getattr(self, 'loading_dialog', None)
+            if dlg:
+                try:
+                    dlg.setValue(self._pending_images_done)
+                except Exception:
+                    pass
+            # If finished, reset counters and hide
+            if self._pending_images_done >= self._pending_images_total:
+                self._pending_images_total = 0
+                self._pending_images_done = 0
+                self.hide_loading()
+        except Exception as e:
+            print(f"DEBUG: _advance_image_progress failed: {e}")
     
     def perform_search(self):
         """Handles the search button click."""
@@ -172,20 +249,31 @@ class HomeWindow(QWidget):
         # Read dropdown selections
         selected_genre = self.genre_combo.currentText() if hasattr(self, 'genre_combo') else None
         selected_year = self.year_combo.currentText() if hasattr(self, 'year_combo') else None
+        selected_rating = self.rating_combo.currentText() if hasattr(self, 'rating_combo') else None
 
         # Normalize default labels to None
-        genre = None if (not selected_genre or selected_genre == 'Genre') else selected_genre
-        year = None if (not selected_year or selected_year == 'Year') else selected_year
+        genre = None if (not selected_genre or selected_genre in ['Genre', 'All Genre']) else selected_genre
+        year = None if (not selected_year or selected_year in ['Year', 'All Year']) else selected_year
+
+        # Parse rating selection into a numeric minimum average (None for Any Rating)
+        rating = None
+        if selected_rating and selected_rating != 'Any Rating':
+            try:
+                # '3+' -> 3, '5' -> 5
+                rating = float(selected_rating.replace('+', ''))
+            except Exception:
+                rating = None
 
         # Set current filter state
         self.current_search_term = search_term
         self.current_genre = genre
         self.current_year = year
+        self.current_rating = rating
         # Debug print for selected filters
-        print(f"DEBUG: perform_search filters -> title='{search_term}', genre='{genre}', year='{year}'")
+        print(f"DEBUG: perform_search filters -> title='{search_term}', genre='{genre}', year='{year}', min_avg_rating='{rating}'")
 
         # If any filter is present, perform search. Otherwise clear.
-        if search_term or genre or year:
+        if search_term or genre or year or rating is not None:
             self.search_mode = True
             self.current_page = 1 # Reset to first page for search results
             self.load_search_results()
@@ -199,9 +287,11 @@ class HomeWindow(QWidget):
         self.search_input.clear()
         self.genre_combo.setCurrentText("All Genre")  # Reset genre to default
         self.year_combo.setCurrentText("All Year")    # Reset year to default
+        self.rating_combo.setCurrentText("Any Rating")
         self.current_search_term = ""
         self.current_genre = None
         self.current_year = None
+        self.current_rating = None
         self.search_mode = False
         self.current_page = 1 # Reset to first page for pagination
         self.load_movies_page(self.current_page) # Reload paginated movies
@@ -221,69 +311,109 @@ class HomeWindow(QWidget):
 
     def load_search_results(self):
         """Fetches search results using current filters and updates the UI."""
-        results = self.movie_service.search_movies_by_title(
-            search_term=self.current_search_term,
-            genre=self.current_genre,
-            year=self.current_year
-        )
-        print(f"DEBUG: Found {len(results)} results for title='{self.current_search_term}', genre='{self.current_genre}', year='{self.current_year}'")
+        # Show loading indicator while we fetch and render results
+        self.show_loading("Searching movies...")
+        try:
+            results = self.movie_service.search_movies_by_title(
+                search_term=self.current_search_term,
+                genre=self.current_genre,
+                year=self.current_year,
+                min_avg_rating=self.current_rating
+            )
+            print(f"DEBUG: Found {len(results)} results for title='{self.current_search_term}', genre='{self.current_genre}', year='{self.current_year}', min_avg_rating='{self.current_rating}'")
 
-        # Clear existing movie widgets from the grid layout
-        while self.movie_grid_layout.count():
-            child = self.movie_grid_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
-
-        # Populate the grid with search results
-        if results:
-            row, col = 0, 0
+            # Clear existing movie widgets from the grid layout
+            while self.movie_grid_layout.count():
+                child = self.movie_grid_layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+            # Count how many images will be requested so we can show determinate progress
+            total_images = 0
             for movie in results:
+                poster_url = movie.get('poster')
+                if poster_url and not is_placeholder_url(poster_url):
+                    total_images += 1
+
+            # If there are images to load, initialize progress counters and update dialog to determinate
+            if total_images > 0:
+                self._pending_images_total = int(total_images)
+                self._pending_images_done = 0
+                # Update dialog to determinate mode with the total
+                self.show_loading("Loading images...", total=total_images)
+
+            # Populate the grid with search results
+            if results:
+                row, col = 0, 0
+                for movie in results:
+                    movie_widget = self.create_movie_widget(movie)
+                    self.movie_grid_layout.addWidget(movie_widget, row, col)
+                    col += 1
+                    if col > 3: # Show 4 movies per row
+                        col = 0
+                        row += 1
+            else:
+                # Show a message if no results found
+                no_results_label = QLabel("No movies found matching your search.")
+                no_results_label.setAlignment(Qt.AlignCenter)
+                # Optionally set a fixed size or use a spacer to center it better
+                self.movie_grid_layout.addWidget(no_results_label, 0, 0, 1, 4) # Span 4 columns
+        finally:
+            # If we are tracking image loads, let the image progress handler hide the dialog
+            if getattr(self, '_pending_images_total', 0) <= 0:
+                self.hide_loading()
+
+    def load_movies_page(self, page_number):
+        """Fetches movies for the given page and updates the UI."""
+        self.show_loading("Loading movies...")
+        try:
+            self.current_page = page_number
+            result = self.movie_service.get_movies_for_homepage(
+                page_number=self.current_page,
+                movies_per_page=self.movies_per_page,
+                max_pages=self.max_pages
+            )
+
+            # Clear existing movie widgets from the grid layout
+            # Method to clear layout: https://stackoverflow.com/a/45790404
+            # To remove widgets/layouts from a layout, you typically need to take them out and delete them
+            while self.movie_grid_layout.count():
+                child = self.movie_grid_layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+
+            # Populate the grid with new movies
+            movies = result['movies']
+
+            # Count images to load for determinate progress
+            total_images = 0
+            for movie in movies:
+                poster_url = movie.get('poster')
+                if poster_url and not is_placeholder_url(poster_url):
+                    total_images += 1
+
+            if total_images > 0:
+                self._pending_images_total = int(total_images)
+                self._pending_images_done = 0
+                self.show_loading("Loading images...", total=total_images)
+
+            row, col = 0, 0
+            for movie in movies:
                 movie_widget = self.create_movie_widget(movie)
                 self.movie_grid_layout.addWidget(movie_widget, row, col)
                 col += 1
                 if col > 3: # Show 4 movies per row
                     col = 0
                     row += 1
-        else:
-            # Show a message if no results found
-            no_results_label = QLabel("No movies found matching your search.")
-            no_results_label.setAlignment(Qt.AlignCenter)
-            # Optionally set a fixed size or use a spacer to center it better
-            self.movie_grid_layout.addWidget(no_results_label, 0, 0, 1, 4) # Span 4 columns
 
-    def load_movies_page(self, page_number):
-        """Fetches movies for the given page and updates the UI."""
-        self.current_page = page_number
-        result = self.movie_service.get_movies_for_homepage(
-            page_number=self.current_page,
-            movies_per_page=self.movies_per_page,
-            max_pages=self.max_pages
-        )
-
-        # Clear existing movie widgets from the grid layout
-        # Method to clear layout: https://stackoverflow.com/a/45790404
-        # To remove widgets/layouts from a layout, you typically need to take them out and delete them
-        while self.movie_grid_layout.count():
-            child = self.movie_grid_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
-
-        # Populate the grid with new movies
-        movies = result['movies']
-        row, col = 0, 0
-        for movie in movies:
-            movie_widget = self.create_movie_widget(movie)
-            self.movie_grid_layout.addWidget(movie_widget, row, col)
-            col += 1
-            if col > 3: # Show 4 movies per row
-                col = 0
-                row += 1
-
-        # Update pagination controls
-        if not self.search_mode:
-            self.page_label.setText(f"Page {self.current_page} of {result['total_pages']}")
-            self.prev_button.setEnabled(result['has_prev'])
-            self.next_button.setEnabled(result['has_next'])
+            # Update pagination controls
+            if not self.search_mode:
+                self.page_label.setText(f"Page {self.current_page} of {result['total_pages']}")
+                self.prev_button.setEnabled(result['has_prev'])
+                self.next_button.setEnabled(result['has_next'])
+        finally:
+            # Let image progress hide the dialog if images are pending
+            if getattr(self, '_pending_images_total', 0) <= 0:
+                self.hide_loading()
 
     def create_movie_widget(self, movie_data):
         """Creates a QWidget representing a single movie."""
@@ -326,7 +456,16 @@ class HomeWindow(QWidget):
                 self._reply_map[reply] = (label_ref, movie_title)
             except Exception:
                 # If reply is not hashable for some reason, fall back to the lambda approach
-                reply.finished.connect(lambda r=reply, lr=label_ref, mt=movie_title: self.on_image_load_finished(r, lr, mt))
+                # Ensure we also advance progress in this fallback
+                def _fallback_finished(r=reply, lr=label_ref, mt=movie_title):
+                    try:
+                        self.on_image_load_finished(r, lr, mt)
+                    finally:
+                        try:
+                            self._advance_image_progress()
+                        except Exception:
+                            pass
+                reply.finished.connect(_fallback_finished)
             else:
                 # Connect centralized handlers which use sender() to find reply
                 # Bind finished and errorOccurred when available.
@@ -490,6 +629,12 @@ class HomeWindow(QWidget):
         except Exception as e:
             print(f"ERROR: Exception processing finished reply: {e}")
             reply.deleteLater()
+        finally:
+            # Advance determinate image progress (if tracking)
+            try:
+                self._advance_image_progress()
+            except Exception:
+                pass
 
     def _on_image_reply_error(self, code):
         """Called when a QNetworkReply emits errorOccurred(code)."""
@@ -513,6 +658,12 @@ class HomeWindow(QWidget):
         except Exception as e:
             print(f"ERROR: Exception processing error reply: {e}")
             reply.deleteLater()
+        finally:
+            # Advance determinate image progress (if tracking)
+            try:
+                self._advance_image_progress()
+            except Exception:
+                pass
 
     def load_default_poster(self, poster_label):
         """Helper function to load the default poster into a given label."""
