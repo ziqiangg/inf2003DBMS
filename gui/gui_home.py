@@ -88,6 +88,24 @@ class YearSelectorDialog(QDialog):
             return (self.start_year.value(), None)
         else:
             return (self.start_year.value(), self.end_year.value())
+
+    def accept(self):
+        """Validate the selected years before accepting the dialog.
+
+        If the dialog is in range mode and the end year is not greater
+        than the start year, show a warning and do not close the dialog.
+        """
+        if self.range_mode.isChecked():
+            try:
+                if self.end_year.value() <= self.start_year.value():
+                    QMessageBox.warning(self, "Invalid Year Range", "End year must be greater than start year.")
+                    return
+            except Exception:
+                # Defensive: if any unexpected error occurs, fall back to blocking accept
+                QMessageBox.warning(self, "Invalid Year Range", "Please select a valid year range.")
+                return
+
+        super().accept()
 from PyQt5.QtCore import Qt, QUrl # Added QUrl for potential link handling
 from PyQt5.QtGui import QPixmap, QIcon
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
@@ -200,87 +218,6 @@ class HomeWindow(QWidget):
                     self.genre_combo.addItem(name)
         except Exception as e:
             print(f"DEBUG: Failed to load genres for dropdown: {e}")
-
-        # Create Year Selection Button
-            def __init__(self, parent=None, available_years=None):
-                super().__init__(parent)
-                self.setWindowTitle("Select Year")
-                self.setModal(True)
-                layout = QVBoxLayout(self)
-                
-                # Mode Selection
-                mode_group = QButtonGroup(self)
-                self.single_mode = QRadioButton("Single Year")
-                self.range_mode = QRadioButton("Year Range")
-                mode_group.addButton(self.single_mode)
-                mode_group.addButton(self.range_mode)
-                self.single_mode.setChecked(True)
-                
-                mode_layout = QHBoxLayout()
-                mode_layout.addWidget(self.single_mode)
-                mode_layout.addWidget(self.range_mode)
-                layout.addLayout(mode_layout)
-                
-                # Year Selection
-                self.year_layout = QHBoxLayout()
-                self.start_year = QSpinBox()
-                self.end_year = QSpinBox()
-                
-                # Set up year ranges from available years
-                if available_years:
-                    min_year = min(available_years)
-                    max_year = max(available_years)
-                else:
-                    import datetime
-                    current_year = datetime.datetime.now().year
-                    min_year = current_year - 30
-                    max_year = current_year
-                
-                self.start_year.setRange(min_year, max_year)
-                self.end_year.setRange(min_year, max_year)
-                self.start_year.setValue(min_year)
-                self.end_year.setValue(min_year + 1)
-                
-                year_label = QLabel("Year:")
-                to_label = QLabel("to")
-                
-                self.year_layout.addWidget(year_label)
-                self.year_layout.addWidget(self.start_year)
-                self.year_layout.addWidget(to_label)
-                self.year_layout.addWidget(self.end_year)
-                layout.addLayout(self.year_layout)
-                
-                # Buttons
-                button_layout = QHBoxLayout()
-                ok_button = QPushButton("OK")
-                cancel_button = QPushButton("Cancel")
-                ok_button.clicked.connect(self.accept)
-                cancel_button.clicked.connect(self.reject)
-                button_layout.addWidget(ok_button)
-                button_layout.addWidget(cancel_button)
-                layout.addLayout(button_layout)
-                
-                # Connect signals
-                self.single_mode.toggled.connect(self.update_mode)
-                self.start_year.valueChanged.connect(self.on_start_year_changed)
-                
-                self.update_mode()
-            
-            def update_mode(self):
-                is_single = self.single_mode.isChecked()
-                self.end_year.setVisible(not is_single)
-                self.year_layout.itemAt(2).widget().setVisible(not is_single)  # "to" label
-                
-            def on_start_year_changed(self, value):
-                if self.range_mode.isChecked():
-                    self.end_year.setMinimum(value + 1)
-            
-            def get_selected_years(self):
-                if self.single_mode.isChecked():
-                    return (self.start_year.value(), None)
-                else:
-                    return (self.start_year.value(), self.end_year.value())
-        
         # Create Year Selection Button
         self.year_button = QPushButton("Select Year")
         self.year_button.clicked.connect(self.show_year_selector)
@@ -404,6 +341,11 @@ class HomeWindow(QWidget):
         dialog = YearSelectorDialog(self, self.available_years)
         if dialog.exec_() == QDialog.Accepted:
             start_year, end_year = dialog.get_selected_years()
+            # Defensive check: dialog.accept() already validates range, but
+            # double-check here before storing the selection.
+            if end_year is not None and end_year <= start_year:
+                QMessageBox.warning(self, "Invalid Year Range", "End year must be greater than start year.")
+                return
             if end_year is None:
                 self.current_year_selection = (start_year, None)
                 self.year_button.setText(f"Year: {start_year}")
