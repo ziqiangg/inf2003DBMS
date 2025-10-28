@@ -99,13 +99,16 @@ CREATE TABLE Reviews (
 );
 ```
 
-## 🚀 Setup Instructions
+### Relational & Non-Relational Dataset
+To download the dataset and .sql dumps:
+[INF2003 Movies Dataset](https://www.kaggle.com/datasets/ziqiangg/inf2003moviesdataset)
+
+## Setup Instructions
 
 ### Prerequisites
-- Python 3.12 or higher
-- MySQL Server 8.0 or higher
-- MongoDB 7.0 or higher
-- Git
+- Ensure that you are using **python version 3.14**.
+- MySQL Server 8.0 CE
+- MongoDB Compass 1.48.0
 
 ### Installation
 Ensure that you are using **python version 3.14**.
