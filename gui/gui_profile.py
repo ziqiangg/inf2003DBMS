@@ -27,6 +27,9 @@ class ProfileWindow(QWidget):
 
         self.selected_user_id = self.current_user_id
         self.selected_user_email = self.current_user_email
+        
+        # Keep reference to the CRUD window
+        self.movie_crud_window = None
 
         self.setWindowTitle('Profile')
         self.setGeometry(200, 200, 800, 600)
@@ -174,6 +177,31 @@ class ProfileWindow(QWidget):
 
     def setup_admin_ui(self, main_layout):
         """Sets up the UI elements specific to the admin profile view."""
+        # --- Manage Movies (CRUD) Button ---
+        crud_button_layout = QHBoxLayout()
+        crud_button_layout.addStretch()
+        manage_movies_button = QPushButton("Manage Movies")
+        manage_movies_button.setStyleSheet("""
+            QPushButton {
+                background-color: #007bff;  
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+            QPushButton:pressed {
+                background-color: #004085;
+            }
+        """)
+        manage_movies_button.setFixedWidth(200)
+        manage_movies_button.clicked.connect(self.open_movie_crud_window)
+        crud_button_layout.addWidget(manage_movies_button)
+        main_layout.addLayout(crud_button_layout)
+
         # --- Search Section ---
         search_frame = QFrame()
         search_layout = QHBoxLayout(search_frame)
@@ -206,6 +234,10 @@ class ProfileWindow(QWidget):
         main_layout.addWidget(rated_movies_frame)
 
         self.rated_movies_list.itemClicked.connect(self.open_movie_detail_from_list)
+
+    def open_movie_crud_window(self):
+        """Stub for opening the movie CRUD window/dialog."""
+        QMessageBox.information(self, "Manage Movies", "Movie CRUD window will open here (to be implemented).")
 
     def setup_user_ui(self, main_layout):
         """Sets up the UI elements specific to the standard user profile view."""
@@ -301,3 +333,12 @@ class ProfileWindow(QWidget):
             detail_window.show()
         else:
             print("DEBUG: ProfileWindow.open_movie_detail_from_list: No tmdbID found in item data.")
+            
+    def open_movie_crud_window(self):
+        """Opens the MovieCrudWindow for creating/editing movies."""
+        from gui.gui_movie_crud import MovieCrudWindow
+        if self.movie_crud_window is None or not self.movie_crud_window.isVisible():
+            self.movie_crud_window = MovieCrudWindow(parent=self)
+        self.movie_crud_window.show()
+        self.movie_crud_window.raise_()  # Bring window to front
+        print("DEBUG: Opening Movie CRUD window")

@@ -22,7 +22,45 @@ SOFT_DELETE_USER = """
 UPDATE Users SET email = NULL, passwordHash = NULL WHERE userID = %s;
 """
 
-# --- Movie Queries (Existing + pagination) ---
+# --- Movie Queries ---
+
+# Query to get next tmdbID
+GET_NEXT_TMDB_ID = """
+SELECT COALESCE(MAX(tmdbID), 0) + 1 AS next_id FROM Movies;
+"""
+
+# Query to insert a new movie
+INSERT_MOVIE = """
+INSERT INTO Movies (tmdbID, title, link, runtime, poster, overview, releaseDate)
+VALUES (%s, %s, %s, %s, %s, %s, %s);
+"""
+
+# Query to check if a genre exists
+CHECK_GENRE_EXISTS = """
+SELECT genreID FROM Genre WHERE genreName = %s;
+"""
+
+# Query to get next available genre ID
+GET_NEXT_GENRE_ID = """
+SELECT COALESCE(MAX(genreID), 0) + 1 AS next_id FROM Genre;
+"""
+
+# Query to insert a new genre
+INSERT_GENRE = """
+INSERT INTO Genre (genreID, genreName)
+VALUES (%s, %s);
+"""
+
+# Query to insert a movie-genre relationship
+INSERT_MOVIE_GENRE = """
+INSERT INTO Movie_Genre (tmdbID, genreID)
+VALUES (%s, %s);
+"""
+
+# Query to list all genres
+LIST_ALL_GENRES = """
+SELECT genreID, genreName FROM Genre ORDER BY genreID;
+"""
 
 # -- Query to get movies for the home page with pagination, sorted by release date (newest first)
 GET_MOVIES_PAGINATED = """
@@ -206,10 +244,10 @@ WHERE g.genreName = %s;
 GET_GENRES_FOR_FILTER = """
 SELECT genreName FROM Genre ORDER BY genreName;
 """
-# Query to insert a new genre (Admin functionality)
-INSERT_GENRE = """
-INSERT INTO Genre (genreName) VALUES (%s);
-"""
+# Query to insert a new genre (Admin functionality) - DEPRECATED, use the one above
+# INSERT_GENRE = """
+# INSERT INTO Genre (genreName) VALUES (%s);
+# """
 # Query to update an existing genre (Admin functionality)
 UPDATE_GENRE = """
 UPDATE Genre SET genreName = %s WHERE genreID = %s;
@@ -217,6 +255,28 @@ UPDATE Genre SET genreName = %s WHERE genreID = %s;
 # Query to delete a genre (Admin functionality) - Note: This will fail if foreign key constraints exist in Movie_Genre
 DELETE_GENRE = """
 DELETE FROM Genre WHERE genreID = %s;
+"""
+
+# Query to update movie details
+UPDATE_MOVIE = """
+UPDATE Movies 
+SET title = %s, 
+    link = %s, 
+    runtime = %s, 
+    poster = %s, 
+    overview = %s, 
+    releaseDate = %s
+WHERE tmdbID = %s;
+"""
+
+# Query to delete all existing movie-genre relationships for a movie
+DELETE_MOVIE_GENRES = """
+DELETE FROM Movie_Genre WHERE tmdbID = %s;
+"""
+
+# Query to delete a movie and its relationships
+DELETE_MOVIE = """
+DELETE FROM Movies WHERE tmdbID = %s;
 """
 
 # --- Profile Page Queries ---

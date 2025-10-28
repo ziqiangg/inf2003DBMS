@@ -5,6 +5,40 @@ from database.repositories.movie_repository import MovieRepository
 class MovieService:
     def __init__(self):
         self.movie_repo = MovieRepository()
+        
+    def create_movie(self, movie_data):
+        """Creates a new movie with associated genres.
+        
+        Args:
+            movie_data (dict): Dictionary containing movie information
+            
+        Returns:
+            dict: Result of the operation
+        """
+        # Validate required fields
+        required_fields = ["title", "runtime", "releaseDate", "genres"]
+        for field in required_fields:
+            if field not in movie_data or not movie_data[field]:
+                return {
+                    "success": False,
+                    "message": f"Missing required field: {field}"
+                }
+        
+        # Additional validation
+        if movie_data["runtime"] < 0:
+            return {
+                "success": False,
+                "message": "Runtime cannot be negative"
+            }
+            
+        if not isinstance(movie_data["genres"], list) or len(movie_data["genres"]) == 0:
+            return {
+                "success": False,
+                "message": "At least one genre must be specified"
+            }
+            
+        # Create the movie
+        return self.movie_repo.create_movie(movie_data)
 
     def get_movies_for_homepage(self, page_number=1, movies_per_page=20, max_pages=10):
         """
@@ -122,6 +156,60 @@ class MovieService:
         """Returns list of available release years from the repository."""
         return self.movie_repo.get_available_years()
 
+    def update_movie(self, movie_data):
+        """Updates an existing movie with associated genres.
+        
+        Args:
+            movie_data (dict): Dictionary containing movie information including tmdbID
+            
+        Returns:
+            dict: Result of the operation
+        """
+        # Validate required fields
+        required_fields = ["tmdbID", "title", "runtime", "releaseDate", "genres"]
+        for field in required_fields:
+            if field not in movie_data or not movie_data[field]:
+                return {
+                    "success": False,
+                    "message": f"Missing required field: {field}"
+                }
+        
+        # Additional validation
+        if movie_data["runtime"] < 0:
+            return {
+                "success": False,
+                "message": "Runtime cannot be negative"
+            }
+            
+        if not isinstance(movie_data["genres"], list) or len(movie_data["genres"]) == 0:
+            return {
+                "success": False,
+                "message": "At least one genre must be specified"
+            }
+            
+        # Update the movie
+        return self.movie_repo.update_movie(movie_data)
+
+    def delete_movie(self, tmdb_id):
+        """Deletes a movie by its tmdbID.
+        
+        Args:
+            tmdb_id (int): The tmdbID of the movie to delete
+            
+        Returns:
+            dict: Result of the operation
+        """
+        try:
+            self.movie_repo.delete_movie(tmdb_id)
+            return {
+                "success": True,
+                "message": "Movie deleted successfully"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to delete movie: {str(e)}"
+            }
 
 
 # Example usage (optional, for testing):
