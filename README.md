@@ -60,8 +60,8 @@ CREATE TABLE Movie_Genre (
 ```sql
 CREATE TABLE Users (
   userID int NOT NULL AUTO_INCREMENT,
-  passwordHash varchar(255) NOT NULL,
-  email varchar(255) NOT NULL,
+  passwordHash varchar(255) NULL,
+  email varchar(255) NULL,
   role varchar(5) NOT NULL DEFAULT 'user',
   PRIMARY KEY (userID),
   UNIQUE KEY Email (email),
