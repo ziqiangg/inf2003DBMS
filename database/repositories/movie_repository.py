@@ -81,8 +81,49 @@ class MovieRepository:
             cursor.close()
             close_connection(connection)
 
-    def search_movies(self, search_term=None, genre=None, year=None, min_avg_rating=None):
-        """Searches movies by optional title, genre and year filters.
+    def count_search_results(self, search_term=None, genre=None, year=None, min_avg_rating=None):
+        """Counts the total number of movies matching the search criteria."""
+        connection = get_mysql_connection()
+        if not connection:
+            return 0
+        cursor = connection.cursor(dictionary=True)
+        try:
+            # Base select for COUNT only
+            query = "SELECT COUNT(DISTINCT m.tmdbID) as total FROM Movies m"
+            params = []
+            # Add joins if genre filter is used
+            if genre:
+                query += " JOIN Movie_Genre mg ON m.tmdbID = mg.tmdbID JOIN Genre g ON mg.genreID = g.genreID"
+
+            where_clauses = []
+            if search_term:
+                where_clauses.append("m.title LIKE %s")
+                params.append(f"%{search_term}%")
+            if genre:
+                where_clauses.append("g.genreName = %s")
+                params.append(genre)
+            if year:
+                where_clauses.append("YEAR(m.releaseDate) = %s")
+                params.append(int(year))
+            if min_avg_rating is not None:
+                where_clauses.append("(CASE WHEN m.countRatings > 0 THEN m.totalRatings / m.countRatings ELSE 0 END) >= %s")
+                params.append(float(min_avg_rating))
+
+            if where_clauses:
+                query += " WHERE " + " AND ".join(where_clauses)
+
+            cursor.execute(query, tuple(params))
+            result = cursor.fetchone()
+            return result['total'] if result else 0
+        except Exception as e:
+            print(f"Error counting search results: {e}")
+            return 0
+        finally:
+            cursor.close()
+            close_connection(connection)
+
+    def search_movies(self, search_term=None, genre=None, year=None, min_avg_rating=None, offset=0, limit=None):
+        """Searches movies by optional title, genre and year filters with pagination.
 
         If all filters are None/empty, returns an empty list (no-op).
         The method builds a dynamic SQL query while keeping the returned columns
@@ -180,8 +221,17 @@ class MovieRepository:
             if where_clauses:
                 query += " WHERE " + " AND ".join(where_clauses)
 
-            query += " ORDER BY m.releaseDate DESC, m.tmdbID DESC;"
-
+            query += " ORDER BY m.releaseDate DESC, m.tmdbID DESC"
+            
+            # Add LIMIT and OFFSET if provided
+            if limit is not None:
+                query += " LIMIT %s"
+                params.append(int(limit))
+                if offset:
+                    query += " OFFSET %s"
+                    params.append(int(offset))
+            
+            query += ";"
             cursor.execute(query, tuple(params))
             movies = cursor.fetchall()
             return movies
