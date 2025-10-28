@@ -1,7 +1,91 @@
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
-    QGridLayout, QMessageBox, QFrame, QTextEdit, QSizePolicy, QSpacerItem, QLineEdit
+    QGridLayout, QMessageBox, QFrame, QTextEdit, QSizePolicy, QSpacerItem, QLineEdit, QComboBox,
+    QCalendarWidget, QDialog, QRadioButton, QButtonGroup, QSpinBox
 )
+
+class YearSelectorDialog(QDialog):
+    def __init__(self, parent=None, available_years=None):
+        super().__init__(parent)
+        self.setWindowTitle("Select Year")
+        self.setModal(True)
+        layout = QVBoxLayout(self)
+        
+        # Mode Selection
+        mode_group = QButtonGroup(self)
+        self.single_mode = QRadioButton("Single Year")
+        self.range_mode = QRadioButton("Year Range")
+        mode_group.addButton(self.single_mode)
+        mode_group.addButton(self.range_mode)
+        self.single_mode.setChecked(True)
+        
+        mode_layout = QHBoxLayout()
+        mode_layout.addWidget(self.single_mode)
+        mode_layout.addWidget(self.range_mode)
+        layout.addLayout(mode_layout)
+        
+        # Year Selection
+        self.year_layout = QHBoxLayout()
+        self.start_year = QSpinBox()
+        self.end_year = QSpinBox()
+        
+        # Set up year ranges from available years
+        if available_years:
+            min_year = min(available_years)
+            max_year = max(available_years)
+        else:
+            import datetime
+            current_year = datetime.datetime.now().year
+            min_year = current_year - 30
+            max_year = current_year
+        
+        self.start_year.setRange(min_year, max_year)
+        self.end_year.setRange(min_year, max_year)
+        self.start_year.setValue(min_year)
+        self.end_year.setValue(min_year + 1)
+        
+        year_label = QLabel("Year:")
+        to_label = QLabel("to")
+        
+        self.year_layout.addWidget(year_label)
+        self.year_layout.addWidget(self.start_year)
+        self.year_layout.addWidget(to_label)
+        self.year_layout.addWidget(self.end_year)
+        layout.addLayout(self.year_layout)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        ok_button = QPushButton("OK")
+        cancel_button = QPushButton("Cancel")
+        ok_button.clicked.connect(self.accept)
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+        
+        # Connect signals
+        self.single_mode.toggled.connect(self.update_mode)
+        self.start_year.valueChanged.connect(self.on_start_year_changed)
+        
+        self.update_mode()
+    
+    def update_mode(self):
+        """Updates the visibility of the end year spinbox based on the selected mode."""
+        is_single = self.single_mode.isChecked()
+        self.end_year.setVisible(not is_single)
+        self.year_layout.itemAt(2).widget().setVisible(not is_single)  # "to" label
+        
+    def on_start_year_changed(self, value):
+        """Ensures the end year is always at least one year after the start year in range mode."""
+        if self.range_mode.isChecked():
+            self.end_year.setMinimum(value + 1)
+    
+    def get_selected_years(self):
+        """Returns the selected year(s) as a tuple (start_year, end_year or None)."""
+        if self.single_mode.isChecked():
+            return (self.start_year.value(), None)
+        else:
+            return (self.start_year.value(), self.end_year.value())
 from PyQt5.QtCore import Qt, QUrl # Added QUrl for potential link handling
 from PyQt5.QtGui import QPixmap, QIcon
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
@@ -10,9 +94,11 @@ import traceback
 from gui.session_manager import SessionManager
 from gui.gui_signals import global_signals
 from database.services.movie_service import MovieService
+from database.services.genre_service import GenreService
 from gui.gui_movie_detail import MovieDetailWindow
 from gui.gui_profile import ProfileWindow
 from gui.utils import is_placeholder_url, DEFAULT_POSTER_PATH, load_default_poster
+import weakref
 
 
 
@@ -28,12 +114,17 @@ class HomeWindow(QWidget):
         # Initialize managers and services
         self.session_manager = SessionManager()
         self.movie_service = MovieService()
-        
-        # Setup window properties
-        self.setWindowTitle('Movie Rating System - Home')
-        self.setGeometry(100, 100, 1200, 800)
-        
-        # Initialize state variables
+        self.genre_service = GenreService()
+        self.current_year_selection = None  # Will store (start_year, end_year) or (single_year, None)
+        # Current filter state for searches
+        self.current_genre = None
+        self.current_year = None
+        self.current_rating = None
+        # Map active QNetworkReply objects to (label_ref, movie_title) so handlers
+        # can find the right widget when signals arrive. This helps avoid lambda
+        # closures which can sometimes lead to duplicate signal handling.
+        self._reply_map = {}
+        # Initialize current page state
         self.current_page = 1
         self.movies_per_page = 20
         self.max_pages = 10
@@ -52,10 +143,10 @@ class HomeWindow(QWidget):
         """Reloads the current page of movies or search results if the updated movie is visible."""
         print(f"DEBUG: HomeWindow.on_movie_data_updated: Received signal for tmdbID {tmdb_id}.")
         # Check if we are currently showing paginated movies or search results
-        if self.search_mode and self.current_search_term:
+        if self.search_mode and (self.current_search_term or self.current_genre or self.current_year):
             # If in search mode, reload the search results
-            print(f"DEBUG: HomeWindow.on_movie_data_updated: Reloading search results for '{self.current_search_term}'.")
-            self.load_search_results(self.current_search_term)
+            print(f"DEBUG: HomeWindow.on_movie_data_updated: Reloading search results for title='{self.current_search_term}', genre='{self.current_genre}', year='{self.current_year}'.")
+            self.load_search_results()
         else:
             # If in pagination mode, reload the current page
             print(f"DEBUG: HomeWindow.on_movie_data_updated: Reloading current page {self.current_page}.")
@@ -93,6 +184,116 @@ class HomeWindow(QWidget):
         search_layout = QHBoxLayout()
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search movies by title...") # Optional: Add placeholder text
+        # Add genre and year dropdowns with descriptive defaults
+        self.genre_combo = QComboBox()
+        self.genre_combo.addItem("All Genre")
+        try:
+            genres = self.genre_service.get_all_genres()
+            for g in genres:
+                # genre service returns dict rows with 'genreName'
+                name = g.get('genreName') if isinstance(g, dict) else str(g)
+                if name:
+                    self.genre_combo.addItem(name)
+        except Exception as e:
+            print(f"DEBUG: Failed to load genres for dropdown: {e}")
+
+        # Create Year Selection Button
+            def __init__(self, parent=None, available_years=None):
+                super().__init__(parent)
+                self.setWindowTitle("Select Year")
+                self.setModal(True)
+                layout = QVBoxLayout(self)
+                
+                # Mode Selection
+                mode_group = QButtonGroup(self)
+                self.single_mode = QRadioButton("Single Year")
+                self.range_mode = QRadioButton("Year Range")
+                mode_group.addButton(self.single_mode)
+                mode_group.addButton(self.range_mode)
+                self.single_mode.setChecked(True)
+                
+                mode_layout = QHBoxLayout()
+                mode_layout.addWidget(self.single_mode)
+                mode_layout.addWidget(self.range_mode)
+                layout.addLayout(mode_layout)
+                
+                # Year Selection
+                self.year_layout = QHBoxLayout()
+                self.start_year = QSpinBox()
+                self.end_year = QSpinBox()
+                
+                # Set up year ranges from available years
+                if available_years:
+                    min_year = min(available_years)
+                    max_year = max(available_years)
+                else:
+                    import datetime
+                    current_year = datetime.datetime.now().year
+                    min_year = current_year - 30
+                    max_year = current_year
+                
+                self.start_year.setRange(min_year, max_year)
+                self.end_year.setRange(min_year, max_year)
+                self.start_year.setValue(min_year)
+                self.end_year.setValue(min_year + 1)
+                
+                year_label = QLabel("Year:")
+                to_label = QLabel("to")
+                
+                self.year_layout.addWidget(year_label)
+                self.year_layout.addWidget(self.start_year)
+                self.year_layout.addWidget(to_label)
+                self.year_layout.addWidget(self.end_year)
+                layout.addLayout(self.year_layout)
+                
+                # Buttons
+                button_layout = QHBoxLayout()
+                ok_button = QPushButton("OK")
+                cancel_button = QPushButton("Cancel")
+                ok_button.clicked.connect(self.accept)
+                cancel_button.clicked.connect(self.reject)
+                button_layout.addWidget(ok_button)
+                button_layout.addWidget(cancel_button)
+                layout.addLayout(button_layout)
+                
+                # Connect signals
+                self.single_mode.toggled.connect(self.update_mode)
+                self.start_year.valueChanged.connect(self.on_start_year_changed)
+                
+                self.update_mode()
+            
+            def update_mode(self):
+                is_single = self.single_mode.isChecked()
+                self.end_year.setVisible(not is_single)
+                self.year_layout.itemAt(2).widget().setVisible(not is_single)  # "to" label
+                
+            def on_start_year_changed(self, value):
+                if self.range_mode.isChecked():
+                    self.end_year.setMinimum(value + 1)
+            
+            def get_selected_years(self):
+                if self.single_mode.isChecked():
+                    return (self.start_year.value(), None)
+                else:
+                    return (self.start_year.value(), self.end_year.value())
+        
+        # Create Year Selection Button
+        self.year_button = QPushButton("Select Year")
+        self.year_button.clicked.connect(self.show_year_selector)
+        try:
+            self.available_years = self.movie_service.get_available_years()
+        except Exception as e:
+            print(f"DEBUG: Failed to load years from DB: {e}")
+            self.available_years = None
+
+        # Average rating dropdown (minimum average rating)
+        self.rating_combo = QComboBox()
+        self.rating_combo.addItem("Any Rating")
+        # Options represent minimum average rating threshold
+        rating_options = ["0+", "1+", "2+", "3+", "4+", "5"]
+        for r in rating_options:
+            self.rating_combo.addItem(r)
+
         search_button = QPushButton("Search")
         clear_search_button = QPushButton("Clear") # Add a clear button
 
@@ -100,6 +301,9 @@ class HomeWindow(QWidget):
         clear_search_button.clicked.connect(self.clear_search)
 
         search_layout.addWidget(self.search_input)
+        search_layout.addWidget(self.genre_combo)
+        search_layout.addWidget(self.year_button)  # Replace year_combo with year_button
+        search_layout.addWidget(self.rating_combo)
         search_layout.addWidget(search_button)
         search_layout.addWidget(clear_search_button) # Add the clear button
         main_layout.addLayout(search_layout)
@@ -138,127 +342,136 @@ class HomeWindow(QWidget):
     
     def perform_search(self):
         """Handles the search button click."""
-        try:
-            search_term = self.search_input.text().strip()
-            if search_term:
-                print(f"DEBUG: Performing search for: '{search_term}'")
-                self.current_search_term = search_term
-                self.search_mode = True
-                self.current_page = 1  # Reset to first page for search results
-                
-                # Clear existing movie widgets before loading search results
-                self.clear_movie_grid()
-                
-                # Load and display search results
-                self.load_search_results(search_term)
-                self.update_pagination_visibility()  # Hide pagination controls during search
-            else:
-                # If search term is empty, clear the search results
-                self.clear_search()
-        except Exception as e:
-            print(f"ERROR in perform_search: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            # Show error message to user
-            QMessageBox.critical(self, "Search Error", 
-                               "An error occurred while searching. Please try again.")
+        search_term = self.search_input.text().strip()
+        # Read dropdown selections
+        selected_genre = self.genre_combo.currentText() if hasattr(self, 'genre_combo') else None
+        selected_year = self.year_combo.currentText() if hasattr(self, 'year_combo') else None
+        selected_rating = self.rating_combo.currentText() if hasattr(self, 'rating_combo') else None
+
+        # Normalize default labels to None
+        genre = None if (not selected_genre or selected_genre in ['Genre', 'All Genre']) else selected_genre
+        # Year is now handled by the YearSelector dialog
+        year = self.current_year_selection[0] if self.current_year_selection else None
+        year_end = self.current_year_selection[1] if self.current_year_selection and len(self.current_year_selection) > 1 else None
+
+        # Parse rating selection into a numeric minimum average (None for Any Rating)
+        rating = None
+        if selected_rating and selected_rating != 'Any Rating':
+            try:
+                # '3+' -> 3, '5' -> 5
+                rating = float(selected_rating.replace('+', ''))
+            except Exception:
+                rating = None
+
+        # Set current filter state
+        self.current_search_term = search_term
+        self.current_genre = genre
+        self.current_year = year
+        self.current_rating = rating
+        # Debug print for selected filters
+        print(f"DEBUG: perform_search filters -> title='{search_term}', genre='{genre}', year='{year}', min_avg_rating='{rating}'")
+
+        # If any filter is present, perform search. Otherwise clear.
+        self.current_page = 1  # Reset to first page for new search
+        if search_term or genre or self.current_year_selection or rating is not None:
+            self.search_mode = True
+            self.load_search_results()
+        else:
+            self.clear_search()
 
     def clear_search(self):
-        """Clears the search input and results, returning to pagination mode."""
-        try:
-            print("DEBUG: Clearing search")
-            # Clear the search input
-            self.search_input.clear()
-            self.current_search_term = ""
-            self.search_mode = False
-            self.current_page = 1  # Reset to first page for pagination
-            
-            # Clear existing movie widgets
-            self.clear_movie_grid()
-            
-            # Reload paginated movies and show pagination controls
-            self.load_movies_page(self.current_page)
-            self.update_pagination_visibility()
-        except Exception as e:
-            print(f"ERROR in clear_search: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            # Show error message to user
-            QMessageBox.critical(self, "Error", 
-                               "An error occurred while clearing the search. Please try again.")
+        """Clears the search input, dropdowns, and results, returning to pagination mode."""
+        print("DEBUG: Clearing search and filters")
+        self.search_input.clear()
+        self.genre_combo.setCurrentText("All Genre")  # Reset genre to default
+        self.year_button.setText("Select Year")    # Reset year button text
+        self.rating_combo.setCurrentText("Any Rating")
+        self.current_search_term = ""
+        self.current_genre = None
+        self.current_year_selection = None
+        self.current_rating = None
+        self.search_mode = False
+        self.current_page = 1 # Reset to first page for pagination
+        self.load_movies_page(self.current_page) # Reload paginated movies
+        self.update_pagination_visibility() # Show pagination controls again
+
+    def show_year_selector(self):
+        """Shows the year selector dialog and updates the button text based on selection."""
+        dialog = YearSelectorDialog(self, self.available_years)
+        if dialog.exec_() == QDialog.Accepted:
+            start_year, end_year = dialog.get_selected_years()
+            if end_year is None:
+                self.current_year_selection = (start_year, None)
+                self.year_button.setText(f"Year: {start_year}")
+            else:
+                self.current_year_selection = (start_year, end_year)
+                self.year_button.setText(f"Years: {start_year}-{end_year}")
 
     def update_pagination_visibility(self):
-        """Shows or hides pagination controls based on search mode."""
-        if self.search_mode:
-            self.pagination_layout.setContentsMargins(0, 0, 0, 0) # Remove margins when hidden
-            self.prev_button.hide()
-            self.page_label.hide()
-            self.next_button.hide()
+        """Shows or hides pagination controls based on search mode and results."""
+        self.prev_button.show()
+        self.page_label.show()
+        self.next_button.show()
+
+    def load_search_results(self):
+        """Fetches search results using current filters and updates the UI with pagination."""
+        # Handle year selection
+        year_param = None
+        if self.current_year_selection:
+            if self.current_year_selection[1] is None:  # Single year mode
+                year_param = self.current_year_selection[0]
+                print(f"DEBUG: Using single year filter: {year_param}")
+            else:  # Range mode
+                year_param = (self.current_year_selection[0], self.current_year_selection[1])
+                print(f"DEBUG: Using year range filter: {year_param[0]}-{year_param[1]}")
         else:
-            self.prev_button.show()
-            self.page_label.show()
-            self.next_button.show()
+            print("DEBUG: No year filter active")
 
-    def clear_movie_grid(self):
-        """Helper method to safely clear all widgets from the movie grid."""
-        try:
-            if self.movie_grid_layout is None:
-                return
-                
-            while self.movie_grid_layout.count():
-                item = self.movie_grid_layout.takeAt(0)
-                if item:
-                    widget = item.widget()
-                    if widget:
-                        widget.setParent(None)
-                        widget.deleteLater()
-            
-            # Process any pending events to ensure widgets are properly deleted
-            QApplication.processEvents()
-            
-        except Exception as e:
-            print(f"ERROR in clear_movie_grid: {str(e)}")
-            import traceback
-            traceback.print_exc()
+        # Get paginated search results
+        result = self.movie_service.search_movies_by_title(
+            search_term=self.current_search_term,
+            genre=self.current_genre,
+            year=year_param,
+            min_avg_rating=self.current_rating,
+            page_number=self.current_page,
+            movies_per_page=self.movies_per_page,
+            max_pages=self.max_pages
+        )
 
-    def load_search_results(self, search_term):
-        """Fetches search results and updates the UI."""
-        try:
-            results = self.movie_service.search_movies_by_title(search_term)
-            print(f"DEBUG: Found {len(results)} results for search term '{search_term}'")
+        # Debug message for search results
+        year_debug = None
+        if isinstance(year_param, tuple):
+            year_debug = f"{year_param[0]}-{year_param[1]}"
+        else:
+            year_debug = str(year_param)
+            
+        print(f"DEBUG: Found results for title='{self.current_search_term}', genre='{self.current_genre}', "
+              f"year='{year_debug}', min_avg_rating='{self.current_rating}', "
+              f"page {result['current_page']} of {result['total_pages']}")
 
             # Clear existing movie widgets
-            self.clear_movie_grid()
+        self.clear_movie_grid()
 
-            # Populate the grid with search results
-            if results:
-                row, col = 0, 0
-                for movie in results:
-                    movie_widget = self.create_movie_widget(movie)
-                    if movie_widget:  # Only add if widget creation was successful
-                        self.movie_grid_layout.addWidget(movie_widget, row, col)
-                        col += 1
-                        if col > 3:  # Show 4 movies per row
-                            col = 0
-                            row += 1
-            else:
-                # Show a message if no results found
-                no_results_label = QLabel("No movies found matching your search.")
-                no_results_label.setAlignment(Qt.AlignCenter)
-                no_results_label.setStyleSheet("font-size: 14px; color: #666;")
-                self.movie_grid_layout.addWidget(no_results_label, 0, 0, 1, 4)  # Span 4 columns
-                
-            # Update the layout
-            self.scroll_widget.updateGeometry()
-            self.scroll_area.updateGeometry()
-            
-        except Exception as e:
-            print(f"ERROR in load_search_results: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            # Show error message to user
-            QMessageBox.critical(self, "Search Error", 
-                               "An error occurred while loading search results. Please try again.")
+        # Populate the grid with search results
+        if result['movies']:
+            row, col = 0, 0
+            for movie in result['movies']:
+                movie_widget = self.create_movie_widget(movie)
+                self.movie_grid_layout.addWidget(movie_widget, row, col)
+                col += 1
+                if col > 3:  # Show 4 movies per row
+                    col = 0
+                    row += 1
+        else:
+            # Show a message if no results found
+            no_results_label = QLabel("No movies found matching your search.")
+            no_results_label.setAlignment(Qt.AlignCenter)
+            self.movie_grid_layout.addWidget(no_results_label, 0, 0, 1, 4)  # Span 4 columns
+
+        # Update pagination display
+        self.page_label.setText(f"Page {result['current_page']} of {result['total_pages']}")
+        self.prev_button.setEnabled(result['has_prev'])
+        self.next_button.setEnabled(result['has_next'])
 
     def load_movies_page(self, page_number):
         """Fetches movies for the given page and updates the UI."""
@@ -268,10 +481,8 @@ class HomeWindow(QWidget):
             movies_per_page=self.movies_per_page,
             max_pages=self.max_pages
         )
-
+        
         # Clear existing movie widgets from the grid layout
-        # Method to clear layout: https://stackoverflow.com/a/45790404
-        # To remove widgets/layouts from a layout, you typically need to take them out and delete them
         while self.movie_grid_layout.count():
             child = self.movie_grid_layout.takeAt(0)
             if child.widget():
@@ -284,7 +495,7 @@ class HomeWindow(QWidget):
             movie_widget = self.create_movie_widget(movie)
             self.movie_grid_layout.addWidget(movie_widget, row, col)
             col += 1
-            if col > 3: # Show 4 movies per row
+            if col > 3:  # Show 4 movies per row
                 col = 0
                 row += 1
 
@@ -327,13 +538,29 @@ class HomeWindow(QWidget):
             # Start the network request using the manager
             # The finished signal will be emitted when the request completes (success, failure, timeout)
             reply = self.network_manager.get(request)
-            # Connect the 'finished' signal of the reply object to a lambda
-            # This lambda captures the specific 'poster_label' widget for this movie
-            # and the 'movie_data' title for potential error logging.
-            # The lambda then calls the 'on_image_load_finished' method.
-            reply.finished.connect(
-                lambda: self.on_image_load_finished(reply, poster_label, movie_data.get('title', 'Unknown'))
-            )
+            # Store a weakref and title for this reply so handlers can look them up
+            label_ref = weakref.ref(poster_label)
+            movie_title = movie_data.get('title', 'Unknown')
+            try:
+                # Map the reply object (QObject) to its context
+                self._reply_map[reply] = (label_ref, movie_title)
+            except Exception:
+                # If reply is not hashable for some reason, fall back to the lambda approach
+                reply.finished.connect(lambda r=reply, lr=label_ref, mt=movie_title: self.on_image_load_finished(r, lr, mt))
+            else:
+                # Connect centralized handlers which use sender() to find reply
+                # Bind finished and errorOccurred when available.
+                try:
+                    reply.finished.connect(self._on_image_reply_finished)
+                except Exception:
+                    # Fallback: if finished doesn't accept this slot, use lambda
+                    reply.finished.connect(lambda r=reply: self._on_image_reply_finished())
+                try:
+                    # errorOccurred is available in newer PyQt5/Qt versions
+                    reply.errorOccurred.connect(self._on_image_reply_error)
+                except Exception:
+                    # Older versions may not have errorOccurred; ignore (finished will still be invoked)
+                    pass
             # The label currently shows nothing or the old pixmap if reused. It will be updated by the callback.
             # You could set a temporary loading image here if desired.
             # --- END ASYNC LOADING ---
@@ -399,30 +626,105 @@ class HomeWindow(QWidget):
 
         return widget
 
-    def on_image_load_finished(self, reply, poster_label, movie_title):
-        try:
-            if reply.error() == QNetworkReply.NoError:
-                image_data = reply.readAll()
-                pixmap = QPixmap()
-                pixmap.loadFromData(image_data)
-                if not pixmap.isNull():
-                    scaled_pixmap = pixmap.scaled(200, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    poster_label.setPixmap(scaled_pixmap)
-                else:
-                    load_default_poster(poster_label, size=(200, 300))
-            else:
-                load_default_poster(poster_label, size=(200, 300))
-            
-            # Clean up the reply
-            reply_id = reply.url().toString()
-            if reply_id in self.reply_references:
-                del self.reply_references[reply_id]
+    def on_image_load_finished(self, reply, poster_label_ref, movie_title):
+        """
+        Callback function called when the QNetworkReply finishes.
+        Updates the specific poster_label with the loaded image or the default image.
+        """
+        poster_label = poster_label_ref()
+        if poster_label is None:
             reply.deleteLater()
-            
-        except Exception as e:
-            print(f"Error in on_image_load_finished: {str(e)}")
-            traceback.print_exc()
+            return
+
+        if reply.error() == QNetworkReply.NoError:  # Success
+            image_data = reply.readAll()
+            pixmap = QPixmap()
+            pixmap.loadFromData(image_data)
+            if not pixmap.isNull():
+                scaled_pixmap = pixmap.scaled(200, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                poster_label.setPixmap(scaled_pixmap)
+            else:
+                print(f"Could not load image data for movie '{movie_title}' from {reply.url().toString()}")
+                load_default_poster(poster_label, size=(200, 300))
+        else:  # Error (e.g., 404, timeout, network failure)
             load_default_poster(poster_label, size=(200, 300))
+
+        reply.deleteLater()
+
+    def _handle_reply_once(self, reply):
+        """Internal helper to ensure a reply is processed only once.
+
+        Returns (label_ref, movie_title) tuple or (None, None) if already handled
+        or not found.
+        """
+        # Use the map we maintain to find the widget context
+        try:
+            if reply in self._reply_map:
+                label_ref, movie_title = self._reply_map.pop(reply)
+            else:
+                return None, None
+        except Exception:
+            # If reply isn't hashable or any other issue, bail out
+            return None, None
+
+        # Mark handled via a property to be extra-safe
+        try:
+            if reply.property('handled'):
+                return None, None
+            reply.setProperty('handled', True)
+        except Exception:
+            pass
+
+        return label_ref, movie_title
+
+    def _on_image_reply_finished(self):
+        """Called when a QNetworkReply emits finished(). Uses sender() to locate context."""
+        reply = self.sender()
+        if reply is None:
+            return
+        # Debug lifecycle
+        try:
+            url = reply.url().toString()
+        except Exception:
+            url = '<unknown>'
+        print(f"DEBUG: _on_image_reply_finished for {url}")
+
+        label_ref, movie_title = self._handle_reply_once(reply)
+        if label_ref is None:
+            reply.deleteLater()
+            return
+
+        # Reuse the existing image processing routine
+        try:
+            self.on_image_load_finished(reply, label_ref, movie_title)
+        except Exception as e:
+            print(f"ERROR: Exception processing finished reply: {e}")
+            reply.deleteLater()
+
+    def _on_image_reply_error(self, code):
+        """Called when a QNetworkReply emits errorOccurred(code)."""
+        reply = self.sender()
+        if reply is None:
+            return
+        try:
+            url = reply.url().toString()
+        except Exception:
+            url = '<unknown>'
+        print(f"DEBUG: _on_image_reply_error code={code} for {url}")
+
+        label_ref, movie_title = self._handle_reply_once(reply)
+        if label_ref is None:
+            reply.deleteLater()
+            return
+
+        # Treat error like finished but on_image_load_finished will choose default image
+        try:
+            self.on_image_load_finished(reply, label_ref, movie_title)
+        except Exception as e:
+            print(f"ERROR: Exception processing error reply: {e}")
+            reply.deleteLater()
+
+
 
     def load_default_poster(self, poster_label):
         """Helper function to load the default poster into a given label."""
@@ -435,9 +737,12 @@ class HomeWindow(QWidget):
 
 
     def change_page(self, new_page):
-        """Changes the displayed movie page."""
-        if not self.search_mode: # Only allow pagination if not in search mode
-            if new_page != self.current_page: # Only reload if page actually changed
+        """Changes the displayed movie page for both search results and homepage."""
+        if new_page != self.current_page:  # Only reload if page actually changed
+            self.current_page = new_page
+            if self.search_mode:
+                self.load_search_results()
+            else:
                 self.load_movies_page(new_page)
 
     def open_login_window(self):

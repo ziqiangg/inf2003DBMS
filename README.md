@@ -108,6 +108,7 @@ CREATE TABLE Reviews (
 - Git
 
 ### Installation
+Ensure that you are using **python version 3.14**.
 
 1. **Clone the repository**
 ```bash

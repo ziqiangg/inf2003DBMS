@@ -60,6 +60,72 @@ FROM Movies m
 WHERE m.title LIKE %s;
 """
 
+# Base query for movie search with all filters
+BASE_MOVIE_SEARCH = """
+SELECT DISTINCT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, 
+       m.runtime, m.totalRatings, m.countRatings
+FROM Movies m
+{joins}
+WHERE {where_clauses}
+ORDER BY m.releaseDate DESC, m.tmdbID DESC
+{limit_clause}
+"""
+
+# Flexible search queries for combinations of title / genre / year.
+# Repository may build SQL dynamically, but these helpers can be used or referenced.
+SEARCH_MOVIES_BY_TITLE_GENRE_YEAR = """
+SELECT DISTINCT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, m.runtime, m.totalRatings, m.countRatings
+FROM Movies m
+JOIN Movie_Genre mg ON m.tmdbID = mg.tmdbID
+JOIN Genre g ON mg.genreID = g.genreID
+WHERE m.title LIKE %s AND g.genreName = %s AND YEAR(m.releaseDate) = %s
+ORDER BY m.releaseDate DESC, m.tmdbID DESC;
+"""
+
+SEARCH_MOVIES_BY_TITLE_GENRE = """
+SELECT DISTINCT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, m.runtime, m.totalRatings, m.countRatings
+FROM Movies m
+JOIN Movie_Genre mg ON m.tmdbID = mg.tmdbID
+JOIN Genre g ON mg.genreID = g.genreID
+WHERE m.title LIKE %s AND g.genreName = %s
+ORDER BY m.releaseDate DESC, m.tmdbID DESC;
+"""
+
+SEARCH_MOVIES_BY_TITLE_YEAR = """
+SELECT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, m.runtime, m.totalRatings, m.countRatings
+FROM Movies m
+WHERE m.title LIKE %s AND YEAR(m.releaseDate) = %s
+ORDER BY m.releaseDate DESC, m.tmdbID DESC;
+"""
+
+SEARCH_MOVIES_BY_GENRE = """
+SELECT DISTINCT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, m.runtime, m.totalRatings, m.countRatings
+FROM Movies m
+JOIN Movie_Genre mg ON m.tmdbID = mg.tmdbID
+JOIN Genre g ON mg.genreID = g.genreID
+WHERE g.genreName = %s
+ORDER BY m.releaseDate DESC, m.tmdbID DESC;
+"""
+
+SEARCH_MOVIES_BY_YEAR = """
+SELECT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, m.runtime, m.totalRatings, m.countRatings
+FROM Movies m
+WHERE YEAR(m.releaseDate) = %s
+ORDER BY m.releaseDate DESC, m.tmdbID DESC;
+"""
+
+# Get all distinct years present in Movies.releaseDate (for populating year dropdowns)
+GET_DISTINCT_YEARS = """
+SELECT DISTINCT YEAR(releaseDate) as year FROM Movies WHERE releaseDate IS NOT NULL ORDER BY year DESC;
+"""
+
+# Get the minimum and maximum year present in Movies.releaseDate
+GET_MIN_MAX_YEAR = """
+SELECT MIN(YEAR(releaseDate)) AS min_year, MAX(YEAR(releaseDate)) AS max_year
+FROM Movies
+WHERE releaseDate IS NOT NULL;
+"""
+
 # --- Rating Queries ---
 # Query to insert a new rating
 INSERT_RATING = """
