@@ -108,7 +108,7 @@ class HomeWindow(QWidget):
             print(f"DEBUG: Failed to load genres for dropdown: {e}")
 
         self.year_combo = QComboBox()
-        self.year_combo.addItem("AllYear")
+        self.year_combo.addItem("All Year")
         try:
             years = self.movie_service.get_available_years()
             for y in years:
@@ -197,8 +197,8 @@ class HomeWindow(QWidget):
         """Clears the search input, dropdowns, and results, returning to pagination mode."""
         print("DEBUG: Clearing search and filters")
         self.search_input.clear()
-        self.genre_combo.setCurrentText("Genre")  # Reset genre to default
-        self.year_combo.setCurrentText("Year")    # Reset year to default
+        self.genre_combo.setCurrentText("All Genre")  # Reset genre to default
+        self.year_combo.setCurrentText("All Year")    # Reset year to default
         self.current_search_term = ""
         self.current_genre = None
         self.current_year = None
