@@ -57,11 +57,17 @@ class MovieService:
         Args:
             search_term (str, optional): Movie title to search for.
             genre (str, optional): Genre to filter by.
-            year (int or tuple, optional): Year or year range to filter by.
+            year (int or tuple, optional): Year or (start_year, end_year) tuple to filter by.
             min_avg_rating (float, optional): Minimum average rating (e.g., 3.0 for 3+).
             page_number (int): Page number to retrieve (default: 1)
             movies_per_page (int): Number of movies per page (default: 20)
             max_pages (int): Maximum number of pages to allow (default: 10)
+
+        Note:
+            The year parameter can be:
+            - int: Single year to match exactly
+            - tuple: (start_year, end_year) for a range search
+            - None: No year filtering
 
         Returns:
             dict: Dictionary containing:
@@ -71,8 +77,20 @@ class MovieService:
                 - has_next: Whether there are more pages
                 - has_prev: Whether there are previous pages
         """
+        # Normalize year parameter for both count and search
+        year_param = None
+        if isinstance(year, (tuple, list)) and len(year) == 2:
+            # It's a range, pass it through as is
+            year_param = year
+        elif year is not None:
+            # Single year, ensure it's an integer
+            try:
+                year_param = int(year)
+            except (TypeError, ValueError):
+                year_param = None
+        
         # Get total count of matching movies first
-        total_movies = self.movie_repo.count_search_results(search_term, genre, year, min_avg_rating)
+        total_movies = self.movie_repo.count_search_results(search_term, genre, year_param, min_avg_rating)
         
         # Calculate total pages
         total_pages = (total_movies + movies_per_page - 1) // movies_per_page
@@ -86,7 +104,7 @@ class MovieService:
         movies = self.movie_repo.search_movies(
             search_term=search_term,
             genre=genre,
-            year=year,
+            year=year_param,
             min_avg_rating=min_avg_rating,
             offset=(page_number - 1) * movies_per_page,
             limit=movies_per_page

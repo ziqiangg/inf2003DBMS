@@ -2,8 +2,92 @@
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
-    QGridLayout, QMessageBox, QFrame, QTextEdit, QSizePolicy, QSpacerItem, QLineEdit, QComboBox
+    QGridLayout, QMessageBox, QFrame, QTextEdit, QSizePolicy, QSpacerItem, QLineEdit, QComboBox,
+    QCalendarWidget, QDialog, QRadioButton, QButtonGroup, QSpinBox
 )
+
+class YearSelectorDialog(QDialog):
+    def __init__(self, parent=None, available_years=None):
+        super().__init__(parent)
+        self.setWindowTitle("Select Year")
+        self.setModal(True)
+        layout = QVBoxLayout(self)
+        
+        # Mode Selection
+        mode_group = QButtonGroup(self)
+        self.single_mode = QRadioButton("Single Year")
+        self.range_mode = QRadioButton("Year Range")
+        mode_group.addButton(self.single_mode)
+        mode_group.addButton(self.range_mode)
+        self.single_mode.setChecked(True)
+        
+        mode_layout = QHBoxLayout()
+        mode_layout.addWidget(self.single_mode)
+        mode_layout.addWidget(self.range_mode)
+        layout.addLayout(mode_layout)
+        
+        # Year Selection
+        self.year_layout = QHBoxLayout()
+        self.start_year = QSpinBox()
+        self.end_year = QSpinBox()
+        
+        # Set up year ranges from available years
+        if available_years:
+            min_year = min(available_years)
+            max_year = max(available_years)
+        else:
+            import datetime
+            current_year = datetime.datetime.now().year
+            min_year = current_year - 30
+            max_year = current_year
+        
+        self.start_year.setRange(min_year, max_year)
+        self.end_year.setRange(min_year, max_year)
+        self.start_year.setValue(min_year)
+        self.end_year.setValue(min_year + 1)
+        
+        year_label = QLabel("Year:")
+        to_label = QLabel("to")
+        
+        self.year_layout.addWidget(year_label)
+        self.year_layout.addWidget(self.start_year)
+        self.year_layout.addWidget(to_label)
+        self.year_layout.addWidget(self.end_year)
+        layout.addLayout(self.year_layout)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        ok_button = QPushButton("OK")
+        cancel_button = QPushButton("Cancel")
+        ok_button.clicked.connect(self.accept)
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+        
+        # Connect signals
+        self.single_mode.toggled.connect(self.update_mode)
+        self.start_year.valueChanged.connect(self.on_start_year_changed)
+        
+        self.update_mode()
+    
+    def update_mode(self):
+        """Updates the visibility of the end year spinbox based on the selected mode."""
+        is_single = self.single_mode.isChecked()
+        self.end_year.setVisible(not is_single)
+        self.year_layout.itemAt(2).widget().setVisible(not is_single)  # "to" label
+        
+    def on_start_year_changed(self, value):
+        """Ensures the end year is always at least one year after the start year in range mode."""
+        if self.range_mode.isChecked():
+            self.end_year.setMinimum(value + 1)
+    
+    def get_selected_years(self):
+        """Returns the selected year(s) as a tuple (start_year, end_year or None)."""
+        if self.single_mode.isChecked():
+            return (self.start_year.value(), None)
+        else:
+            return (self.start_year.value(), self.end_year.value())
 from PyQt5.QtCore import Qt, QUrl # Added QUrl for potential link handling
 from PyQt5.QtGui import QPixmap, QIcon
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
@@ -27,6 +111,7 @@ class HomeWindow(QWidget):
         self.session_manager = SessionManager()
         self.movie_service = MovieService()
         self.genre_service = GenreService()
+        self.current_year_selection = None  # Will store (start_year, end_year) or (single_year, None)
         # Current filter state for searches
         self.current_genre = None
         self.current_year = None
@@ -108,19 +193,94 @@ class HomeWindow(QWidget):
         except Exception as e:
             print(f"DEBUG: Failed to load genres for dropdown: {e}")
 
-        self.year_combo = QComboBox()
-        self.year_combo.addItem("All Year")
+        # Create Year Selection Button
+            def __init__(self, parent=None, available_years=None):
+                super().__init__(parent)
+                self.setWindowTitle("Select Year")
+                self.setModal(True)
+                layout = QVBoxLayout(self)
+                
+                # Mode Selection
+                mode_group = QButtonGroup(self)
+                self.single_mode = QRadioButton("Single Year")
+                self.range_mode = QRadioButton("Year Range")
+                mode_group.addButton(self.single_mode)
+                mode_group.addButton(self.range_mode)
+                self.single_mode.setChecked(True)
+                
+                mode_layout = QHBoxLayout()
+                mode_layout.addWidget(self.single_mode)
+                mode_layout.addWidget(self.range_mode)
+                layout.addLayout(mode_layout)
+                
+                # Year Selection
+                self.year_layout = QHBoxLayout()
+                self.start_year = QSpinBox()
+                self.end_year = QSpinBox()
+                
+                # Set up year ranges from available years
+                if available_years:
+                    min_year = min(available_years)
+                    max_year = max(available_years)
+                else:
+                    import datetime
+                    current_year = datetime.datetime.now().year
+                    min_year = current_year - 30
+                    max_year = current_year
+                
+                self.start_year.setRange(min_year, max_year)
+                self.end_year.setRange(min_year, max_year)
+                self.start_year.setValue(min_year)
+                self.end_year.setValue(min_year + 1)
+                
+                year_label = QLabel("Year:")
+                to_label = QLabel("to")
+                
+                self.year_layout.addWidget(year_label)
+                self.year_layout.addWidget(self.start_year)
+                self.year_layout.addWidget(to_label)
+                self.year_layout.addWidget(self.end_year)
+                layout.addLayout(self.year_layout)
+                
+                # Buttons
+                button_layout = QHBoxLayout()
+                ok_button = QPushButton("OK")
+                cancel_button = QPushButton("Cancel")
+                ok_button.clicked.connect(self.accept)
+                cancel_button.clicked.connect(self.reject)
+                button_layout.addWidget(ok_button)
+                button_layout.addWidget(cancel_button)
+                layout.addLayout(button_layout)
+                
+                # Connect signals
+                self.single_mode.toggled.connect(self.update_mode)
+                self.start_year.valueChanged.connect(self.on_start_year_changed)
+                
+                self.update_mode()
+            
+            def update_mode(self):
+                is_single = self.single_mode.isChecked()
+                self.end_year.setVisible(not is_single)
+                self.year_layout.itemAt(2).widget().setVisible(not is_single)  # "to" label
+                
+            def on_start_year_changed(self, value):
+                if self.range_mode.isChecked():
+                    self.end_year.setMinimum(value + 1)
+            
+            def get_selected_years(self):
+                if self.single_mode.isChecked():
+                    return (self.start_year.value(), None)
+                else:
+                    return (self.start_year.value(), self.end_year.value())
+        
+        # Create Year Selection Button
+        self.year_button = QPushButton("Select Year")
+        self.year_button.clicked.connect(self.show_year_selector)
         try:
-            years = self.movie_service.get_available_years()
-            for y in years:
-                self.year_combo.addItem(str(y))
+            self.available_years = self.movie_service.get_available_years()
         except Exception as e:
-            # Fallback: populate a range if DB call fails
             print(f"DEBUG: Failed to load years from DB: {e}")
-            import datetime
-            current_year = datetime.datetime.now().year
-            for y in range(current_year, current_year-30, -1):
-                self.year_combo.addItem(str(y))
+            self.available_years = None
 
         # Average rating dropdown (minimum average rating)
         self.rating_combo = QComboBox()
@@ -138,7 +298,7 @@ class HomeWindow(QWidget):
 
         search_layout.addWidget(self.search_input)
         search_layout.addWidget(self.genre_combo)
-        search_layout.addWidget(self.year_combo)
+        search_layout.addWidget(self.year_button)  # Replace year_combo with year_button
         search_layout.addWidget(self.rating_combo)
         search_layout.addWidget(search_button)
         search_layout.addWidget(clear_search_button) # Add the clear button
@@ -186,7 +346,9 @@ class HomeWindow(QWidget):
 
         # Normalize default labels to None
         genre = None if (not selected_genre or selected_genre in ['Genre', 'All Genre']) else selected_genre
-        year = None if (not selected_year or selected_year in ['Year', 'All Year']) else selected_year
+        # Year is now handled by the YearSelector dialog
+        year = self.current_year_selection[0] if self.current_year_selection else None
+        year_end = self.current_year_selection[1] if self.current_year_selection and len(self.current_year_selection) > 1 else None
 
         # Parse rating selection into a numeric minimum average (None for Any Rating)
         rating = None
@@ -207,7 +369,7 @@ class HomeWindow(QWidget):
 
         # If any filter is present, perform search. Otherwise clear.
         self.current_page = 1  # Reset to first page for new search
-        if search_term or genre or year or rating is not None:
+        if search_term or genre or self.current_year_selection or rating is not None:
             self.search_mode = True
             self.load_search_results()
         else:
@@ -218,16 +380,28 @@ class HomeWindow(QWidget):
         print("DEBUG: Clearing search and filters")
         self.search_input.clear()
         self.genre_combo.setCurrentText("All Genre")  # Reset genre to default
-        self.year_combo.setCurrentText("All Year")    # Reset year to default
+        self.year_button.setText("Select Year")    # Reset year button text
         self.rating_combo.setCurrentText("Any Rating")
         self.current_search_term = ""
         self.current_genre = None
-        self.current_year = None
+        self.current_year_selection = None
         self.current_rating = None
         self.search_mode = False
         self.current_page = 1 # Reset to first page for pagination
         self.load_movies_page(self.current_page) # Reload paginated movies
         self.update_pagination_visibility() # Show pagination controls again
+
+    def show_year_selector(self):
+        """Shows the year selector dialog and updates the button text based on selection."""
+        dialog = YearSelectorDialog(self, self.available_years)
+        if dialog.exec_() == QDialog.Accepted:
+            start_year, end_year = dialog.get_selected_years()
+            if end_year is None:
+                self.current_year_selection = (start_year, None)
+                self.year_button.setText(f"Year: {start_year}")
+            else:
+                self.current_year_selection = (start_year, end_year)
+                self.year_button.setText(f"Years: {start_year}-{end_year}")
 
     def update_pagination_visibility(self):
         """Shows or hides pagination controls based on search mode and results."""
@@ -237,19 +411,38 @@ class HomeWindow(QWidget):
 
     def load_search_results(self):
         """Fetches search results using current filters and updates the UI with pagination."""
+        # Handle year selection
+        year_param = None
+        if self.current_year_selection:
+            if self.current_year_selection[1] is None:  # Single year mode
+                year_param = self.current_year_selection[0]
+                print(f"DEBUG: Using single year filter: {year_param}")
+            else:  # Range mode
+                year_param = (self.current_year_selection[0], self.current_year_selection[1])
+                print(f"DEBUG: Using year range filter: {year_param[0]}-{year_param[1]}")
+        else:
+            print("DEBUG: No year filter active")
+
         # Get paginated search results
         result = self.movie_service.search_movies_by_title(
             search_term=self.current_search_term,
             genre=self.current_genre,
-            year=self.current_year,
+            year=year_param,
             min_avg_rating=self.current_rating,
             page_number=self.current_page,
             movies_per_page=self.movies_per_page,
             max_pages=self.max_pages
         )
 
+        # Debug message for search results
+        year_debug = None
+        if isinstance(year_param, tuple):
+            year_debug = f"{year_param[0]}-{year_param[1]}"
+        else:
+            year_debug = str(year_param)
+            
         print(f"DEBUG: Found results for title='{self.current_search_term}', genre='{self.current_genre}', "
-              f"year='{self.current_year}', min_avg_rating='{self.current_rating}', "
+              f"year='{year_debug}', min_avg_rating='{self.current_rating}', "
               f"page {result['current_page']} of {result['total_pages']}")
 
         # Clear existing movie widgets from the grid layout
@@ -302,31 +495,6 @@ class HomeWindow(QWidget):
             self.movie_grid_layout.addWidget(movie_widget, row, col)
             col += 1
             if col > 3:  # Show 4 movies per row
-                col = 0
-                row += 1
-
-        # Update pagination controls
-        if not self.search_mode:
-            self.page_label.setText(f"Page {self.current_page} of {result['total_pages']}")
-            self.prev_button.setEnabled(result['has_prev'])
-            self.next_button.setEnabled(result['has_next'])
-
-        # Clear existing movie widgets from the grid layout
-        # Method to clear layout: https://stackoverflow.com/a/45790404
-        # To remove widgets/layouts from a layout, you typically need to take them out and delete them
-        while self.movie_grid_layout.count():
-            child = self.movie_grid_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
-
-        # Populate the grid with new movies
-        movies = result['movies']
-        row, col = 0, 0
-        for movie in movies:
-            movie_widget = self.create_movie_widget(movie)
-            self.movie_grid_layout.addWidget(movie_widget, row, col)
-            col += 1
-            if col > 3: # Show 4 movies per row
                 col = 0
                 row += 1
 

@@ -60,6 +60,17 @@ FROM Movies m
 WHERE m.title LIKE %s;
 """
 
+# Base query for movie search with all filters
+BASE_MOVIE_SEARCH = """
+SELECT DISTINCT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, 
+       m.runtime, m.totalRatings, m.countRatings
+FROM Movies m
+{joins}
+WHERE {where_clauses}
+ORDER BY m.releaseDate DESC, m.tmdbID DESC
+{limit_clause}
+"""
+
 # Flexible search queries for combinations of title / genre / year.
 # Repository may build SQL dynamically, but these helpers can be used or referenced.
 SEARCH_MOVIES_BY_TITLE_GENRE_YEAR = """
