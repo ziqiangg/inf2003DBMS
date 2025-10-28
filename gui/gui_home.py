@@ -34,7 +34,10 @@ class HomeWindow(QWidget):
         # Initialize the Network Access Manager for async image loading
         self.network_manager = QNetworkAccessManager()
         self.profile_window_ref = None
+        # Connect to global signals
         global_signals.movie_data_updated.connect(self.on_movie_data_updated)
+        global_signals.user_logged_out.connect(self.on_user_logged_out)
+        
         self.init_ui()
         self.load_movies_page(self.current_page)
 
@@ -51,6 +54,11 @@ class HomeWindow(QWidget):
             # If in pagination mode, reload the current page
             print(f"DEBUG: HomeWindow.on_movie_data_updated: Reloading current page {self.current_page}.")
             self.load_movies_page(self.current_page) # This will fetch the updated average ratings
+
+    def on_user_logged_out(self):
+        """Handles the user_logged_out signal by updating the UI."""
+        print("DEBUG: HomeWindow.on_user_logged_out: Received logout signal, updating UI.")
+        self.update_ui_after_login()
 
     def init_ui(self):
         main_layout = QVBoxLayout()
