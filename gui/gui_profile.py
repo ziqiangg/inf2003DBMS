@@ -214,13 +214,52 @@ class ProfileWindow(QWidget):
         search_layout.addWidget(search_button)
         main_layout.addWidget(search_frame)
 
-        # --- Display Selected User Info ---
+        # --- Display Selected User Info with Remove User Button ---
         self.selected_user_info_frame = QFrame()
-        selected_info_layout = QFormLayout(self.selected_user_info_frame)
+        selected_info_main_layout = QVBoxLayout(self.selected_user_info_frame)
+
+        # Create horizontal layout for user info and remove button
+        user_info_row_layout = QHBoxLayout()
+
+        # Left side: User info
+        selected_info_layout = QFormLayout()
         self.selected_user_email_label = QLabel(self.selected_user_email)
         self.selected_user_id_label = QLabel(str(self.selected_user_id))
         selected_info_layout.addRow("Viewing Profile For Email:", self.selected_user_email_label)
         selected_info_layout.addRow("User ID:", self.selected_user_id_label)
+
+        user_info_row_layout.addLayout(selected_info_layout)
+        
+        # Add stretch to push remove button to the right
+        user_info_row_layout.addStretch()
+        
+        # Right side: Remove User button
+        self.remove_user_button = QPushButton("Remove User")
+        self.remove_user_button.setStyleSheet("""
+            QPushButton {
+                background-color: #dc3545;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #c82333;
+            }
+            QPushButton:pressed {
+                background-color: #bd2130;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+                cursor: not-allowed;
+            }
+        """)
+        self.remove_user_button.setFixedWidth(150)
+        self.remove_user_button.clicked.connect(self.remove_user)
+        user_info_row_layout.addWidget(self.remove_user_button)
+        
+        selected_info_main_layout.addLayout(user_info_row_layout)
         main_layout.addWidget(self.selected_user_info_frame)
 
         # --- Rated Movies List ---
@@ -235,9 +274,125 @@ class ProfileWindow(QWidget):
 
         self.rated_movies_list.itemClicked.connect(self.open_movie_detail_from_list)
 
-    def open_movie_crud_window(self):
-        """Stub for opening the movie CRUD window/dialog."""
-        QMessageBox.information(self, "Manage Movies", "Movie CRUD window will open here (to be implemented).")
+        # Update button state based on selected user
+        self.update_remove_user_button_state()
+
+    def remove_user(self):
+        """Handles the admin removing a user account with role validation."""
+        # First, get the full user data to check their role
+        user_data = self.user_service.user_repo.get_user_by_email(self.selected_user_email)
+        
+        if not user_data:
+            QMessageBox.warning(
+                self,
+                "User Not Found",
+                "Could not find user information. Please try searching again."
+            )
+            return
+        
+        # Check if the user is an admin
+        if user_data.get('role') == 'admin':
+            QMessageBox.warning(
+                self,
+                "Cannot Remove Admin",
+                "You cannot remove administrator accounts.\n\n"
+                "Only regular user accounts can be removed."
+            )
+            print(f"DEBUG: Admin attempted to remove admin account (userID: {self.selected_user_id})")
+            return
+        
+        # Check if trying to remove self (though this shouldn't happen in admin view)
+        if self.selected_user_id == self.current_user_id:
+            QMessageBox.warning(
+                self,
+                "Cannot Remove Self",
+                "You cannot remove your own account from this interface.\n\n"
+                "Please use the 'Delete Account' button if you wish to delete your own account."
+            )
+            return
+        
+        # Create detailed confirmation dialog
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Remove User Account")
+        msg_box.setIcon(QMessageBox.Warning)
+        msg_box.setText(f"Are you sure you want to remove this user account?")
+        msg_box.setInformativeText(
+            f"User: {self.selected_user_email}\n"
+            f"User ID: {self.selected_user_id}\n\n"
+            "This action will:\n"
+            "• Remove the user's email and password from the system\n"
+            "• Keep their reviews and ratings visible\n"
+            "• Prevent them from logging in again\n\n"
+            "This action cannot be undone."
+        )
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg_box.setDefaultButton(QMessageBox.No)
+        
+        yes_button = msg_box.button(QMessageBox.Yes)
+        yes_button.setText("Remove User")
+        no_button = msg_box.button(QMessageBox.No)
+        no_button.setText("Cancel")
+        
+        response = msg_box.exec_()
+        
+        if response == QMessageBox.Yes:
+            print(f"DEBUG: Admin confirmed removal of user account (userID: {self.selected_user_id})")
+            
+            # Call the service layer to perform soft delete
+            result = self.user_service.delete_user(self.selected_user_id)
+            
+            if result['success']:
+                QMessageBox.information(
+                    self,
+                    "User Removed",
+                    f"User account has been successfully removed.\n\n"
+                    f"Email: {self.selected_user_email}\n"
+                    f"User ID: {self.selected_user_id}\n\n"
+                    "Their reviews and ratings remain in the system."
+                )
+                
+                # Clear the selected user display
+                self.selected_user_email_label.setText("No user selected")
+                self.selected_user_id_label.setText("N/A")
+                self.rated_movies_list.clear()
+                self.search_email_input.clear()
+                
+                # Reset selected user to admin's own profile
+                self.selected_user_id = self.current_user_id
+                self.selected_user_email = self.current_user_email
+                
+                # Update button state
+                self.update_remove_user_button_state()
+                
+                print(f"DEBUG: Successfully removed user account (userID: {self.selected_user_id})")
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Removal Failed",
+                    f"Failed to remove user account:\n\n{result['message']}"
+                )
+                print(f"ERROR: User removal failed for userID {self.selected_user_id}: {result['message']}")
+        else:
+            print("DEBUG: Admin cancelled user removal")
+
+    def update_remove_user_button_state(self):
+        """Updates the Remove User button's enabled state based on selected user."""
+        if not hasattr(self, 'remove_user_button'):
+            return
+        
+        # Disable button if viewing own profile or if no user is selected
+        if self.selected_user_id == self.current_user_id or not self.selected_user_id:
+            self.remove_user_button.setEnabled(False)
+            self.remove_user_button.setToolTip("Cannot remove your own account")
+        else:
+            # Check if selected user is an admin
+            user_data = self.user_service.user_repo.get_user_by_email(self.selected_user_email)
+            if user_data and user_data.get('role') == 'admin':
+                self.remove_user_button.setEnabled(False)
+                self.remove_user_button.setToolTip("Cannot remove administrator accounts")
+            else:
+                self.remove_user_button.setEnabled(True)
+                self.remove_user_button.setToolTip("Remove this user account")
 
     def setup_user_ui(self, main_layout):
         """Sets up the UI elements specific to the standard user profile view."""
@@ -268,6 +423,7 @@ class ProfileWindow(QWidget):
             self.selected_user_email_label.setText(self.selected_user_email)
             self.selected_user_id_label.setText(str(self.selected_user_id))
             self.load_profile_data()
+            self.update_remove_user_button_state()
         else:
             QMessageBox.information(self, 'User Not Found', f'No user found with email: {email_to_search}')
 
