@@ -14,6 +14,7 @@ from database.services.movie_service import MovieService
 from gui.gui_movie_detail import MovieDetailWindow
 from gui.gui_profile import ProfileWindow
 from gui.utils import is_placeholder_url, DEFAULT_POSTER_PATH, load_default_poster
+import weakref
 
 
 
@@ -262,8 +263,14 @@ class HomeWindow(QWidget):
             # This lambda captures the specific 'poster_label' widget for this movie
             # and the 'movie_data' title for potential error logging.
             # The lambda then calls the 'on_image_load_finished' method.
+            # Use a weak reference to the QLabel so that if the widget is deleted
+            # before the network request finishes we don't attempt to access a
+            # deleted C++ object (which raises RuntimeError). The callback will
+            # safely no-op if the label no longer exists.
+            label_ref = weakref.ref(poster_label)
+            movie_title = movie_data.get('title', 'Unknown')
             reply.finished.connect(
-                lambda: self.on_image_load_finished(reply, poster_label, movie_data.get('title', 'Unknown'))
+                lambda r=reply, lr=label_ref, mt=movie_title: self.on_image_load_finished(r, lr, mt)
             )
             # The label currently shows nothing or the old pixmap if reused. It will be updated by the callback.
             # You could set a temporary loading image here if desired.
@@ -329,13 +336,22 @@ class HomeWindow(QWidget):
 
         return widget
 
-    def on_image_load_finished(self, reply, poster_label, movie_title):
+    def on_image_load_finished(self, reply, poster_label_ref, movie_title):
         """
         Callback function called when the QNetworkReply finishes.
         Updates the specific poster_label with the loaded image or the default image.
         """
+        # Dereference the weakref; if the label was deleted, do nothing and
+        # just clean up the reply. This prevents trying to call methods on a
+        # wrapped C/C++ object that's already been deleted.
+        poster_label = poster_label_ref()
+        if poster_label is None:
+            # The QLabel was deleted; free the reply and return.
+            reply.deleteLater()
+            return
+
         # Check the status of the reply
-        if reply.error() == QNetworkReply.NoError: # Success
+        if reply.error() == QNetworkReply.NoError:  # Success
             # Read the image data from the reply
             image_data = reply.readAll()
             # Create a QPixmap from the data
@@ -349,11 +365,10 @@ class HomeWindow(QWidget):
                 # If QPixmap couldn't be created from data (unexpected), use default
                 print(f"Could not load image data for movie '{movie_title}' from {reply.url().toString()}")
                 load_default_poster(poster_label, size=(200, 300))
-        else: # Error (e.g., 404, timeout, network failure)
-            # Print the error for debugging (optional)
-            # print(f"Failed to load poster for '{movie_title}' from {reply.url().toString()}: {reply.errorString()}")
+        else:  # Error (e.g., 404, timeout, network failure)
             # Load the default poster for the specific label
             load_default_poster(poster_label, size=(200, 300))
+
         # Clean up the reply object to free resources
         reply.deleteLater()
 
