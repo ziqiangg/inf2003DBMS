@@ -2,7 +2,7 @@
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
-    QGridLayout, QMessageBox, QFrame, QTextEdit, QSizePolicy, QSpacerItem, QLineEdit
+    QGridLayout, QMessageBox, QFrame, QTextEdit, QSizePolicy, QSpacerItem, QLineEdit, QComboBox
 )
 from PyQt5.QtCore import Qt, QUrl # Added QUrl for potential link handling
 from PyQt5.QtGui import QPixmap, QIcon
@@ -11,6 +11,7 @@ import sys
 from gui.session_manager import SessionManager
 from gui.gui_signals import global_signals
 from database.services.movie_service import MovieService
+from database.services.genre_service import GenreService
 from gui.gui_movie_detail import MovieDetailWindow
 from gui.gui_profile import ProfileWindow
 from gui.utils import is_placeholder_url, DEFAULT_POSTER_PATH, load_default_poster
@@ -25,6 +26,14 @@ class HomeWindow(QWidget):
         self.setGeometry(100, 100, 1200, 800)
         self.session_manager = SessionManager()
         self.movie_service = MovieService()
+        self.genre_service = GenreService()
+        # Current filter state for searches
+        self.current_genre = None
+        self.current_year = None
+        # Map active QNetworkReply objects to (label_ref, movie_title) so handlers
+        # can find the right widget when signals arrive. This helps avoid lambda
+        # closures which can sometimes lead to duplicate signal handling.
+        self._reply_map = {}
         # Initialize current page state
         self.current_page = 1
         self.movies_per_page = 20
@@ -44,10 +53,10 @@ class HomeWindow(QWidget):
         """Reloads the current page of movies or search results if the updated movie is visible."""
         print(f"DEBUG: HomeWindow.on_movie_data_updated: Received signal for tmdbID {tmdb_id}.")
         # Check if we are currently showing paginated movies or search results
-        if self.search_mode and self.current_search_term:
+        if self.search_mode and (self.current_search_term or self.current_genre or self.current_year):
             # If in search mode, reload the search results
-            print(f"DEBUG: HomeWindow.on_movie_data_updated: Reloading search results for '{self.current_search_term}'.")
-            self.load_search_results(self.current_search_term)
+            print(f"DEBUG: HomeWindow.on_movie_data_updated: Reloading search results for title='{self.current_search_term}', genre='{self.current_genre}', year='{self.current_year}'.")
+            self.load_search_results()
         else:
             # If in pagination mode, reload the current page
             print(f"DEBUG: HomeWindow.on_movie_data_updated: Reloading current page {self.current_page}.")
@@ -85,6 +94,33 @@ class HomeWindow(QWidget):
         search_layout = QHBoxLayout()
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search movies by title...") # Optional: Add placeholder text
+        # Add genre and year dropdowns with descriptive defaults
+        self.genre_combo = QComboBox()
+        self.genre_combo.addItem("All Genre")
+        try:
+            genres = self.genre_service.get_all_genres()
+            for g in genres:
+                # genre service returns dict rows with 'genreName'
+                name = g.get('genreName') if isinstance(g, dict) else str(g)
+                if name:
+                    self.genre_combo.addItem(name)
+        except Exception as e:
+            print(f"DEBUG: Failed to load genres for dropdown: {e}")
+
+        self.year_combo = QComboBox()
+        self.year_combo.addItem("AllYear")
+        try:
+            years = self.movie_service.get_available_years()
+            for y in years:
+                self.year_combo.addItem(str(y))
+        except Exception as e:
+            # Fallback: populate a range if DB call fails
+            print(f"DEBUG: Failed to load years from DB: {e}")
+            import datetime
+            current_year = datetime.datetime.now().year
+            for y in range(current_year, current_year-30, -1):
+                self.year_combo.addItem(str(y))
+
         search_button = QPushButton("Search")
         clear_search_button = QPushButton("Clear") # Add a clear button
 
@@ -92,6 +128,8 @@ class HomeWindow(QWidget):
         clear_search_button.clicked.connect(self.clear_search)
 
         search_layout.addWidget(self.search_input)
+        search_layout.addWidget(self.genre_combo)
+        search_layout.addWidget(self.year_combo)
         search_layout.addWidget(search_button)
         search_layout.addWidget(clear_search_button) # Add the clear button
         main_layout.addLayout(search_layout)
@@ -131,22 +169,39 @@ class HomeWindow(QWidget):
     def perform_search(self):
         """Handles the search button click."""
         search_term = self.search_input.text().strip()
-        if search_term:
-            print(f"DEBUG: Performing search for: '{search_term}'")
-            self.current_search_term = search_term
+        # Read dropdown selections
+        selected_genre = self.genre_combo.currentText() if hasattr(self, 'genre_combo') else None
+        selected_year = self.year_combo.currentText() if hasattr(self, 'year_combo') else None
+
+        # Normalize default labels to None
+        genre = None if (not selected_genre or selected_genre == 'Genre') else selected_genre
+        year = None if (not selected_year or selected_year == 'Year') else selected_year
+
+        # Set current filter state
+        self.current_search_term = search_term
+        self.current_genre = genre
+        self.current_year = year
+        # Debug print for selected filters
+        print(f"DEBUG: perform_search filters -> title='{search_term}', genre='{genre}', year='{year}'")
+
+        # If any filter is present, perform search. Otherwise clear.
+        if search_term or genre or year:
             self.search_mode = True
             self.current_page = 1 # Reset to first page for search results
-            self.load_search_results(search_term)
+            self.load_search_results()
             self.update_pagination_visibility() # Hide pagination controls during search
         else:
-            # If search term is empty, clear the search results
             self.clear_search()
 
     def clear_search(self):
-        """Clears the search input and results, returning to pagination mode."""
-        print("DEBUG: Clearing search")
+        """Clears the search input, dropdowns, and results, returning to pagination mode."""
+        print("DEBUG: Clearing search and filters")
         self.search_input.clear()
+        self.genre_combo.setCurrentText("Genre")  # Reset genre to default
+        self.year_combo.setCurrentText("Year")    # Reset year to default
         self.current_search_term = ""
+        self.current_genre = None
+        self.current_year = None
         self.search_mode = False
         self.current_page = 1 # Reset to first page for pagination
         self.load_movies_page(self.current_page) # Reload paginated movies
@@ -164,10 +219,14 @@ class HomeWindow(QWidget):
             self.page_label.show()
             self.next_button.show()
 
-    def load_search_results(self, search_term):
-        """Fetches search results and updates the UI."""
-        results = self.movie_service.search_movies_by_title(search_term)
-        print(f"DEBUG: Found {len(results)} results for search term '{search_term}'")
+    def load_search_results(self):
+        """Fetches search results using current filters and updates the UI."""
+        results = self.movie_service.search_movies_by_title(
+            search_term=self.current_search_term,
+            genre=self.current_genre,
+            year=self.current_year
+        )
+        print(f"DEBUG: Found {len(results)} results for title='{self.current_search_term}', genre='{self.current_genre}', year='{self.current_year}'")
 
         # Clear existing movie widgets from the grid layout
         while self.movie_grid_layout.count():
@@ -259,19 +318,29 @@ class HomeWindow(QWidget):
             # Start the network request using the manager
             # The finished signal will be emitted when the request completes (success, failure, timeout)
             reply = self.network_manager.get(request)
-            # Connect the 'finished' signal of the reply object to a lambda
-            # This lambda captures the specific 'poster_label' widget for this movie
-            # and the 'movie_data' title for potential error logging.
-            # The lambda then calls the 'on_image_load_finished' method.
-            # Use a weak reference to the QLabel so that if the widget is deleted
-            # before the network request finishes we don't attempt to access a
-            # deleted C++ object (which raises RuntimeError). The callback will
-            # safely no-op if the label no longer exists.
+            # Store a weakref and title for this reply so handlers can look them up
             label_ref = weakref.ref(poster_label)
             movie_title = movie_data.get('title', 'Unknown')
-            reply.finished.connect(
-                lambda r=reply, lr=label_ref, mt=movie_title: self.on_image_load_finished(r, lr, mt)
-            )
+            try:
+                # Map the reply object (QObject) to its context
+                self._reply_map[reply] = (label_ref, movie_title)
+            except Exception:
+                # If reply is not hashable for some reason, fall back to the lambda approach
+                reply.finished.connect(lambda r=reply, lr=label_ref, mt=movie_title: self.on_image_load_finished(r, lr, mt))
+            else:
+                # Connect centralized handlers which use sender() to find reply
+                # Bind finished and errorOccurred when available.
+                try:
+                    reply.finished.connect(self._on_image_reply_finished)
+                except Exception:
+                    # Fallback: if finished doesn't accept this slot, use lambda
+                    reply.finished.connect(lambda r=reply: self._on_image_reply_finished())
+                try:
+                    # errorOccurred is available in newer PyQt5/Qt versions
+                    reply.errorOccurred.connect(self._on_image_reply_error)
+                except Exception:
+                    # Older versions may not have errorOccurred; ignore (finished will still be invoked)
+                    pass
             # The label currently shows nothing or the old pixmap if reused. It will be updated by the callback.
             # You could set a temporary loading image here if desired.
             # --- END ASYNC LOADING ---
@@ -371,6 +440,79 @@ class HomeWindow(QWidget):
 
         # Clean up the reply object to free resources
         reply.deleteLater()
+
+    def _handle_reply_once(self, reply):
+        """Internal helper to ensure a reply is processed only once.
+
+        Returns (label_ref, movie_title) tuple or (None, None) if already handled
+        or not found.
+        """
+        # Use the map we maintain to find the widget context
+        try:
+            if reply in self._reply_map:
+                label_ref, movie_title = self._reply_map.pop(reply)
+            else:
+                return None, None
+        except Exception:
+            # If reply isn't hashable or any other issue, bail out
+            return None, None
+
+        # Mark handled via a property to be extra-safe
+        try:
+            if reply.property('handled'):
+                return None, None
+            reply.setProperty('handled', True)
+        except Exception:
+            pass
+
+        return label_ref, movie_title
+
+    def _on_image_reply_finished(self):
+        """Called when a QNetworkReply emits finished(). Uses sender() to locate context."""
+        reply = self.sender()
+        if reply is None:
+            return
+        # Debug lifecycle
+        try:
+            url = reply.url().toString()
+        except Exception:
+            url = '<unknown>'
+        print(f"DEBUG: _on_image_reply_finished for {url}")
+
+        label_ref, movie_title = self._handle_reply_once(reply)
+        if label_ref is None:
+            reply.deleteLater()
+            return
+
+        # Reuse the existing image processing routine
+        try:
+            self.on_image_load_finished(reply, label_ref, movie_title)
+        except Exception as e:
+            print(f"ERROR: Exception processing finished reply: {e}")
+            reply.deleteLater()
+
+    def _on_image_reply_error(self, code):
+        """Called when a QNetworkReply emits errorOccurred(code)."""
+        reply = self.sender()
+        if reply is None:
+            return
+        try:
+            url = reply.url().toString()
+        except Exception:
+            url = '<unknown>'
+        print(f"DEBUG: _on_image_reply_error code={code} for {url}")
+
+        label_ref, movie_title = self._handle_reply_once(reply)
+        if label_ref is None:
+            reply.deleteLater()
+            return
+
+        # Treat error like finished but on_image_load_finished will choose default image
+        try:
+            self.on_image_load_finished(reply, label_ref, movie_title)
+        except Exception as e:
+            print(f"ERROR: Exception processing error reply: {e}")
+            reply.deleteLater()
 
     def load_default_poster(self, poster_label):
         """Helper function to load the default poster into a given label."""

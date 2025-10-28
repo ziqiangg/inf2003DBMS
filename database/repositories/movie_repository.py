@@ -1,7 +1,10 @@
 # database/repositories/movie_repository.py
 
 from database.db_connection import get_mysql_connection, close_connection
-from database.sql_queries import GET_MOVIES_PAGINATED, COUNT_ALL_MOVIES, GET_MOVIE_BY_ID, SEARCH_MOVIES_BY_TITLE
+from database.sql_queries import (
+    GET_MOVIES_PAGINATED, COUNT_ALL_MOVIES, GET_MOVIE_BY_ID,
+    SEARCH_MOVIES_BY_TITLE, GET_DISTINCT_YEARS, GET_MIN_MAX_YEAR
+)
 
 class MovieRepository:
     def __init__(self):
@@ -73,6 +76,102 @@ class MovieRepository:
             return movies
         except Exception as e:
             print(f"Error searching movies by title: {e}")
+            return []
+        finally:
+            cursor.close()
+            close_connection(connection)
+
+    def search_movies(self, search_term=None, genre=None, year=None):
+        """Searches movies by optional title, genre and year filters.
+
+        If all filters are None/empty, returns an empty list (no-op).
+        The method builds a dynamic SQL query while keeping the returned columns
+        consistent with other movie queries.
+        """
+        # Normalize empty strings to None
+        if search_term is not None:
+            search_term = search_term.strip()
+            if search_term == "":
+                search_term = None
+        if genre is not None:
+            genre = genre.strip() if isinstance(genre, str) and genre.strip() != "" else None
+        if year is not None:
+            # allow year as string or int
+            try:
+                year = int(year)
+            except Exception:
+                year = None
+
+        # If no filters provided, return empty list to avoid accidental full scans
+        if not search_term and not genre and not year:
+            return []
+
+        connection = get_mysql_connection()
+        if not connection:
+            return []
+
+        cursor = connection.cursor(dictionary=True)
+        try:
+            # Base select
+            query = (
+                "SELECT DISTINCT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, "
+                "m.runtime, m.totalRatings, m.countRatings FROM Movies m"
+            )
+            params = []
+            # Add joins if genre filter is used
+            if genre:
+                query += " JOIN Movie_Genre mg ON m.tmdbID = mg.tmdbID JOIN Genre g ON mg.genreID = g.genreID"
+
+            where_clauses = []
+            if search_term:
+                where_clauses.append("m.title LIKE %s")
+                params.append(f"%{search_term}%")
+            if genre:
+                where_clauses.append("g.genreName = %s")
+                params.append(genre)
+            if year:
+                where_clauses.append("YEAR(m.releaseDate) = %s")
+                params.append(year)
+
+            if where_clauses:
+                query += " WHERE " + " AND ".join(where_clauses)
+
+            query += " ORDER BY m.releaseDate DESC, m.tmdbID DESC;"
+
+            cursor.execute(query, tuple(params))
+            movies = cursor.fetchall()
+            return movies
+        except Exception as e:
+            print(f"Error searching movies with filters: {e}")
+            return []
+        finally:
+            cursor.close()
+            close_connection(connection)
+
+    def get_available_years(self):
+        """Returns a list of years actually present in Movies.releaseDate, descending.
+
+        This uses the `GET_DISTINCT_YEARS` query so the dropdown reflects only
+        years that exist in the database (no artificial continuous ranges).
+        """
+        connection = get_mysql_connection()
+        if not connection:
+            return []
+        cursor = connection.cursor(dictionary=True)
+        try:
+            cursor.execute(GET_DISTINCT_YEARS)
+            rows = cursor.fetchall()
+            # Extract year values, filter None, ensure descending order
+            years = [r['year'] for r in rows if r and r.get('year')]
+            # Ensure they are integers and sorted descending
+            try:
+                years = sorted({int(y) for y in years}, reverse=True)
+            except Exception:
+                # If conversion fails, return as-is
+                pass
+            return years
+        except Exception as e:
+            print(f"Error fetching available years: {e}")
             return []
         finally:
             cursor.close()

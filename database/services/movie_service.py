@@ -51,13 +51,18 @@ class MovieService:
         """Retrieves details for a specific movie."""
         return self.movie_repo.get_movie_by_id(tmdb_id)
     
-    def search_movies_by_title(self, search_term):
-        """Searches for movies by title."""
-        if not search_term:
-            # If search term is empty, return an empty list or perhaps default paginated results
-            # Returning empty list for now if search term is empty
-            return []
-        return self.movie_repo.search_movies_by_title(search_term)
+    def search_movies_by_title(self, search_term=None, genre=None, year=None):
+        """Searches for movies by title, optionally filtering by genre and/or year.
+
+        Backwards compatible: if called with only a search_term behaves like before.
+        If search_term is empty but genre or year supplied, those filters will be applied.
+        """
+        # Delegate to repository's flexible search method. The repo handles empty/None values.
+        return self.movie_repo.search_movies(search_term=search_term, genre=genre, year=year)
+
+    def get_available_years(self):
+        """Returns list of available release years from the repository."""
+        return self.movie_repo.get_available_years()
 
 
 
