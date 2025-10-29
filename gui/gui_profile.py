@@ -435,31 +435,65 @@ class ProfileWindow(QWidget):
 
         print(f"DEBUG: ProfileWindow.load_profile_data: Loading data for userID {self.selected_user_id}")
 
+        # Get the raw data from the service (includes ratings and reviews)
         user_interactions = self.rating_service.get_user_ratings_and_reviews_for_profile(self.selected_user_id)
         print(f"DEBUG: ProfileWindow.load_profile_data: Retrieved {len(user_interactions)} interactions (ratings/reviews) via service.")
 
-        for i, interaction in enumerate(user_interactions[:2]):
-            print(f"DEBUG: ProfileWindow.load_profile_data: Interaction {i+1}: {interaction}")
+        # --- GUI LOGIC CHANGE: Separate, Sort, and Combine ---
+        # 1. Separate interactions based on presence of rating
+        rated_movies = [] # For movies with a rating (may or may not have a review)
+        reviewed_only_movies = [] # For movies with only a review (no rating)
+
+        for item in user_interactions:
+            if item['rating'] is not None:
+                rated_movies.append(item)
+            else: # item['rating'] is None
+                reviewed_only_movies.append(item)
+
+        # 2. Sort each list according to the rules
+        # Sort rated movies by rating value (descending)
+        rated_movies.sort(key=lambda x: x['rating'], reverse=True)
+        # Sort reviewed-only movies by review_timeStamp (descending)
+        # Note: The unified query sets review_timeStamp correctly for review-only entries.
+        # We need to ensure the processed list from the service correctly maps the timestamp.
+        # Assuming the service logic correctly assigns 'timeStamp' based on review_timeStamp for review-only entries.
+        # If the service sets 'timeStamp' correctly, use it:
+        reviewed_only_movies.sort(key=lambda x: x.get('timeStamp'), reverse=True)
+        # If the service doesn't set 'timeStamp' correctly for review-only, you might need to rely on
+        # the original repository query's 'review_timeStamp' field if accessible here,
+        # or ensure the service correctly populates 'timeStamp' when rating is None.
+
+        # 3. Combine the two lists: rated first, then reviewed-only
+        sorted_interactions = rated_movies + reviewed_only_movies
+
+        print(f"DEBUG: ProfileWindow.load_profile_data: After separating/sorting, {len(rated_movies)} rated and {len(reviewed_only_movies)} review-only movies.")
 
         print("DEBUG: ProfileWindow.load_profile_data: Clearing existing list.")
         self.rated_movies_list.clear()
 
-        print("DEBUG: ProfileWindow.load_profile_data: Starting to populate list widget.")
-        for i, interaction in enumerate(user_interactions):
-            print(f"DEBUG: ProfileWindow.load_profile_data: Processing interaction {i+1}: {interaction}")
+        print("DEBUG: ProfileWindow.load_profile_data: Starting to populate list widget with sorted data.")
+        for i, interaction in enumerate(sorted_interactions):
+            print(f"DEBUG: ProfileWindow.load_profile_data: Processing sorted interaction {i+1}: {interaction}")
             try:
                 tmdb_id = interaction['tmdbID']
                 movie_title = interaction['title']
                 rating_value = interaction['rating']
                 review_text = interaction['review']
+                # The 'timeStamp' here should be correctly set by the service based on the interaction type
                 timestamp = interaction.get('timeStamp', 'N/A')
 
+                # Construct item text based on presence of rating and review
                 if rating_value is not None:
-                    item_text = f"{movie_title} - Rating: {rating_value}/5 (Time: {timestamp})"
+                    item_text = f"{movie_title} - Rating: {rating_value}/5"
+                    # If there's also a review, add it on the next line
                     if review_text:
-                         item_text += f"\nReview: {review_text}"
-                else:
-                    item_text = f"{movie_title} - Review (No Rating) (Time: {timestamp})\nReview: {review_text if review_text else 'No Review Text'}"
+                        item_text += f"\nReview: {review_text}"
+                    # Optionally, show timestamp if rating has one (though it's None from the query)
+                    # item_text += f" (Time: {timestamp})" # This would show (Time: None) based on query
+                else: # rating_value is None, must be review-only
+                    item_text = f"{movie_title} - Review (No Rating) (Time: {timestamp})"
+                    # Add the review text
+                    item_text += f"\nReview: {review_text if review_text else 'No Review Text'}"
 
                 print(f"DEBUG: ProfileWindow.load_profile_data: Item text for tmdbID {tmdb_id}: {item_text[:50]}...")
 
@@ -478,7 +512,7 @@ class ProfileWindow(QWidget):
                 traceback.print_exc()
                 continue
 
-        print("DEBUG: ProfileWindow.load_profile_data: Finished populating list widget.")
+        print("DEBUG: ProfileWindow.load_profile_data: Finished populating list widget with sorted data.")
 
     def open_movie_detail_from_list(self, item):
         """Opens the MovieDetailWindow for the movie associated with the clicked list item."""
