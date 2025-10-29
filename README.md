@@ -100,7 +100,7 @@ CREATE TABLE Reviews (
 ```
 
 ### Relational & Non-Relational Dataset
-To download the dataset and .sql dumps:
+To download the dataset and .sql dumps, please use version 3:
 [INF2003 Movies Dataset](https://www.kaggle.com/datasets/ziqiangg/inf2003moviesdataset)
 
 ## Setup Instructions
