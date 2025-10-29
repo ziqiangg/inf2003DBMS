@@ -49,3 +49,124 @@ class CastCrewService:
                 formatted_crew[dept][job] = []
             formatted_crew[dept][job].append(name)
         return formatted_crew
+
+    def add_cast_member(self, tmdb_id, name, character):
+        """Adds a cast member via the repository using name for collision."""
+        if not all([tmdb_id, name, character]):
+            return {"success": False, "message": "All fields (tmdbID, name, character) are required."}
+        try:
+            success = self.cast_crew_repo.add_cast_member(tmdb_id, name, character) # Removed actor_id from call
+            if success:
+                return {"success": True, "message": "Cast member added/updated successfully."}
+            else:
+                return {"success": False, "message": "Failed to add/update cast member (DB error)."}
+        except Exception as e:
+            print(f"Error in CastCrewService.add_cast_member: {e}")
+            return {"success": False, "message": f"An error occurred: {e}"}
+
+    def add_crew_member(self, tmdb_id, name, job, department):
+        """Adds a crew member via the repository using name and job for collision."""
+        # Basic validation - removed person_id check
+        if not all([tmdb_id, name, job, department]):
+            return {"success": False, "message": "All fields (tmdbID, name, job, department) are required."}
+        try:
+            success = self.cast_crew_repo.add_crew_member(tmdb_id, name, job, department) # Removed person_id from call
+            if success:
+                return {"success": True, "message": "Crew member added/updated successfully."}
+            else:
+                return {"success": False, "message": "Failed to add/update crew member (DB error)."}
+        except Exception as e:
+            print(f"Error in CastCrewService.add_crew_member: {e}")
+            return {"success": False, "message": f"An error occurred: {e}"}
+
+    def update_cast_member(self, tmdb_id, name, new_character):
+        """Updates a cast member via the repository using name."""
+        # Basic validation - removed actor_id check
+        if not all([tmdb_id, name, new_character]):
+            return {"success": False, "message": "tmdbID, name, and new_character are required."}
+        try:
+            success = self.cast_crew_repo.update_cast_member(tmdb_id, name, new_character) # Removed actor_id from call
+            if success:
+                return {"success": True, "message": "Cast member updated successfully."}
+            else:
+                return {"success": False, "message": "Failed to update cast member (not found or DB error)."}
+        except Exception as e:
+            print(f"Error in CastCrewService.update_cast_member: {e}")
+            return {"success": False, "message": f"An error occurred: {e}"}
+
+    def update_crew_member(self, tmdb_id, name, old_job, new_department, new_job=None):
+        """Updates a crew member via the repository using name and old job."""
+        # Basic validation - removed person_id check
+        if not all([tmdb_id, name, old_job, new_department]):
+            return {"success": False, "message": "tmdbID, name, old_job, and new_department are required."}
+        try:
+            success = self.cast_crew_repo.update_crew_member(tmdb_id, name, old_job, new_department, new_job) # Removed person_id from call
+            if success:
+                return {"success": True, "message": "Crew member updated successfully."}
+            else:
+                return {"success": False, "message": "Failed to update crew member (not found or DB error)."}
+        except Exception as e:
+            print(f"Error in CastCrewService.update_crew_member: {e}")
+            return {"success": False, "message": f"An error occurred: {e}"}
+
+    def delete_cast_member(self, tmdb_id, name):
+        """Deletes a cast member via the repository using name."""
+        # Basic validation - removed actor_id check
+        if not all([tmdb_id, name]):
+            return {"success": False, "message": "tmdbID and name are required."}
+        try:
+            success = self.cast_crew_repo.delete_cast_member(tmdb_id, name) # Removed actor_id from call
+            if success:
+                return {"success": True, "message": "Cast member deleted successfully."}
+            else:
+                return {"success": False, "message": "Failed to delete cast member (not found or DB error)."}
+        except Exception as e:
+            print(f"Error in CastCrewService.delete_cast_member: {e}")
+            return {"success": False, "message": f"An error occurred: {e}"}
+
+    def delete_crew_member(self, tmdb_id, name, job):
+        """Deletes a crew member via the repository using name and job."""
+        # Basic validation - removed person_id check
+        if not all([tmdb_id, name, job]):
+            return {"success": False, "message": "tmdbID, name, and job are required."}
+        try:
+            success = self.cast_crew_repo.delete_crew_member(tmdb_id, name, job) # Removed person_id from call
+            if success:
+                return {"success": True, "message": "Crew member deleted successfully."}
+            else:
+                return {"success": False, "message": "Failed to delete crew member (not found or DB error)."}
+        except Exception as e:
+            print(f"Error in CastCrewService.delete_crew_member: {e}")
+            return {"success": False, "message": f"An error occurred: {e}"}
+        
+    def delete_all_cast_for_movie(self, tmdb_id):
+        """
+        Deletes all cast members for a specific movie via the repository.
+        """
+        try:
+            success = self.cast_crew_repo.delete_all_cast_for_movie(tmdb_id)
+            if success:
+                print(f"DEBUG: Service: Successfully deleted all cast for tmdbID {tmdb_id}.")
+                return {"success": True, "message": f"Deleted all cast for movie {tmdb_id}."}
+            else:
+                print(f"DEBUG: Service: Failed to delete all cast for tmdbID {tmdb_id}.")
+                return {"success": False, "message": f"Failed to delete all cast for movie {tmdb_id} (DB error or connection issue)."}
+        except Exception as e:
+            print(f"Error in CastCrewService.delete_all_cast_for_movie: {e}")
+            return {"success": False, "message": f"An error occurred: {e}"}
+
+    def delete_all_crew_for_movie(self, tmdb_id):
+        """
+        Deletes all crew members for a specific movie via the repository.
+        """
+        try:
+            success = self.cast_crew_repo.delete_all_crew_for_movie(tmdb_id)
+            if success:
+                print(f"DEBUG: Service: Successfully deleted all crew for tmdbID {tmdb_id}.")
+                return {"success": True, "message": f"Deleted all crew for movie {tmdb_id}."}
+            else:
+                print(f"DEBUG: Service: Failed to delete all crew for tmdbID {tmdb_id}.")
+                return {"success": False, "message": f"Failed to delete all crew for movie {tmdb_id} (DB error or connection issue)."}
+        except Exception as e:
+            print(f"Error in CastCrewService.delete_all_crew_for_movie: {e}")
+            return {"success": False, "message": f"An error occurred: {e}"}
