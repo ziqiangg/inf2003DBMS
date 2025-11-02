@@ -467,27 +467,6 @@ class MovieForm(QWidget):
             movie_data["tmdbID"] = self.movie_data["tmdbID"]
         return movie_data
     
-    # Helper methods to handle saving cast/crew data when the movie is saved/updated (Removed ID from calls)
-    def save_cast_data(self, tmdb_id):
-        """Saves the cast data from the form to the MongoDB database."""
-        cast_list = self.get_movie_data()["cast"] # Re-fetch cast list
-        for person in cast_list:
-            result = self.cast_crew_service.add_cast_member(
-                tmdb_id, person['name'], person['character'] # Removed actor_id from call
-            )
-            if not result["success"]:
-                print(f"Warning: Could not save cast member {person['name']}: {result['message']}")
-
-    def save_crew_data(self, tmdb_id):
-        """Saves the crew data from the form to the MongoDB database."""
-        crew_list = self.get_movie_data()["crew"] # Re-fetch crew list
-        for person in crew_list:
-            result = self.cast_crew_service.add_crew_member(
-                tmdb_id, person['name'], person['job'], person['department'] # Removed person_id from call
-            )
-            if not result["success"]:
-                print(f"Warning: Could not save crew member {person['name']}: {result['message']}")
-
 class MovieSearchPanel(QWidget):
     """Advanced search panel for movies with title, genre, and year filters"""
     def __init__(self, parent=None):
@@ -684,18 +663,30 @@ class MovieCrudWindow(QWidget):
                 tmdb_id = result.get("movie_id")
                 print(f"DEBUG: Retrieved tmdbID from result: {tmdb_id}")
                 if tmdb_id:
-                    self.create_form.cast_crew_service = self.cast_crew_service
-                    print(f"DEBUG: About to call save_cast_data for tmdbID {tmdb_id}")
-                    self.create_form.save_cast_data(tmdb_id)
-                    print(f"DEBUG: About to call save_crew_data for tmdbID {tmdb_id}")
-                    self.create_form.save_crew_data(tmdb_id)
-                    print(f"DEBUG: Finished calling save_cast_data and save_crew_data for tmdbID {tmdb_id}")
-                else:
-                    print(f"DEBUG: WARNING: tmdbID was not found in the result: {result}")
+                    # NOW save cast and crew data with the correct tmdbID
+                    cast_list = movie_data.get("cast", [])
+                    crew_list = movie_data.get("crew", [])
+                    
+                    # Save cast members
+                    for person in cast_list:
+                        cast_result = self.cast_crew_service.add_cast_member(
+                            tmdb_id, person['name'], person['character']
+                        )
+                        if not cast_result["success"]:
+                            print(f"Warning: Could not save cast member {person['name']}: {cast_result['message']}")
+                    
+                    # Save crew members
+                    for person in crew_list:
+                        crew_result = self.cast_crew_service.add_crew_member(
+                            tmdb_id, person['name'], person['job'], person['department']
+                        )
+                        if not crew_result["success"]:
+                            print(f"Warning: Could not save crew member {person['name']}: {crew_result['message']}")
+                
                 QMessageBox.information(self, "Success", "Movie created successfully!")
                 self.create_form.clear_form()
                 
-                # ADDED: emit a signal to notify other windows
+                # Emit signal to notify other windows
                 global_signals.movie_data_updated.emit(tmdb_id)
                 self.close()
             else:
@@ -718,7 +709,6 @@ class MovieCrudWindow(QWidget):
             QMessageBox.warning(self, "Validation Error", "At least one genre is required!")
             return
 
-        # FIXED: Use service layer instead of repository
         stats_result = self.movie_service.get_movie_stats(movie_data["tmdbID"])
         if stats_result.get('success'):
             rating_count = stats_result.get('rating_count', 0)
@@ -740,12 +730,31 @@ class MovieCrudWindow(QWidget):
         try:
             result = self.movie_service.update_movie(movie_data)
             if result["success"]:
-                # After updating the movie, save/overwrite cast/crew data
                 tmdb_id = movie_data["tmdbID"]
-                # Call the helper methods on the edit_form instance
-                self.edit_form.cast_crew_service = self.cast_crew_service
-                self.edit_form.save_cast_data(tmdb_id)
-                self.edit_form.save_crew_data(tmdb_id)
+                
+                # Delete existing cast and crew data first
+                self.cast_crew_service.delete_all_cast_for_movie(tmdb_id)
+                self.cast_crew_service.delete_all_crew_for_movie(tmdb_id)
+                
+                # Now save the updated cast and crew data
+                cast_list = movie_data.get("cast", [])
+                crew_list = movie_data.get("crew", [])
+                
+                # Save cast members
+                for person in cast_list:
+                    cast_result = self.cast_crew_service.add_cast_member(
+                        tmdb_id, person['name'], person['character']
+                    )
+                    if not cast_result["success"]:
+                        print(f"Warning: Could not save cast member {person['name']}: {cast_result['message']}")
+                
+                # Save crew members
+                for person in crew_list:
+                    crew_result = self.cast_crew_service.add_crew_member(
+                        tmdb_id, person['name'], person['job'], person['department']
+                    )
+                    if not crew_result["success"]:
+                        print(f"Warning: Could not save crew member {person['name']}: {crew_result['message']}")
 
                 QMessageBox.information(self, "Success", "Movie updated successfully!")
                 self.search_panel.search_movies()  # Refresh search results

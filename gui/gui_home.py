@@ -224,10 +224,14 @@ class HomeWindow(QWidget):
         self.year_button = QPushButton("Select Year")
         self.year_button.clicked.connect(self.show_year_selector)
         try:
-            self.available_years = self.movie_service.get_available_years()
+            years_result = self.movie_service.get_available_years()
+            if years_result.get('success'):
+                self.available_years = years_result.get('years', [])
+            else:
+                self.available_years = []
         except Exception as e:
             print(f"DEBUG: Failed to load years from DB: {e}")
-            self.available_years = None
+            self.available_years = []
 
         # Average rating dropdown (minimum average rating)
         self.rating_combo = QComboBox()

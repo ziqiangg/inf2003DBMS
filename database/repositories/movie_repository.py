@@ -21,7 +21,7 @@ class MovieRepository:
         """Creates a new movie with genres in a transaction."""
         connection = get_mysql_connection()
         if not connection:
-            return {"success": False, "message": "Database connection failed"}
+            return None  # Changed from dict to None
         
         cursor = connection.cursor()
         try:
@@ -65,19 +65,12 @@ class MovieRepository:
             
             # Commit all operations
             connection.commit()
-            return {
-                "success": True,
-                "message": "Movie created successfully",
-                "movie_id": next_tmdb_id
-            }
+            return next_tmdb_id  # Return just the ID, not a dict
             
         except Exception as e:
             print(f"Error creating movie: {e}")
             connection.rollback()
-            return {
-                "success": False,
-                "message": f"Database error: {str(e)}"
-            }
+            return None  # Return None on failure
         finally:
             cursor.close()
             close_connection(connection)
@@ -541,15 +534,16 @@ class MovieRepository:
         try:
             cursor.execute(GET_DISTINCT_YEARS)
             rows = cursor.fetchall()
-            # Extract year values, filter None, ensure descending order
-            years = [r['year'] for r in rows if r and r.get('year')]
-            # Ensure they are integers and sorted descending
-            try:
-                years = sorted({int(y) for y in years}, reverse=True)
-            except Exception:
-                # If conversion fails, return as-is
-                pass
-            return years
+            # Extract year values, filter None, ensure they are integers
+            years = []
+            for r in rows:
+                if r and r.get('year') is not None:
+                    try:
+                        years.append(int(r['year']))
+                    except (ValueError, TypeError):
+                        continue  # Skip invalid values
+            # Return sorted descending
+            return sorted(set(years), reverse=True)
         except Exception as e:
             print(f"Error fetching available years: {e}")
             return []
