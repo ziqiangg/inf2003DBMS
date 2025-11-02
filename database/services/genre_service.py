@@ -28,21 +28,22 @@ class GenreService:
 
         return {"success": True, "message": "Genre added successfully."}
 
-    def update_genre(self, genre_id, new_genre_name):
-        """Updates an existing genre (Admin functionality)."""
-        if not new_genre_name or len(new_genre_name.strip()) == 0:
-             return {"success": False, "message": "Genre name cannot be empty."}
+    #should technically not be possible to update genre names
+    # def update_genre(self, genre_id, new_genre_name):
+    #     """Updates an existing genre (Admin functionality)."""
+    #     if not new_genre_name or len(new_genre_name.strip()) == 0:
+    #          return {"success": False, "message": "Genre name cannot be empty."}
 
-        success = self.genre_repo.update_genre(genre_id, new_genre_name.strip())
-        if not success:
-            return {"success": False, "message": "Failed to update genre in the database or genre does not exist."}
+    #     success = self.genre_repo.update_genre(genre_id, new_genre_name.strip())
+    #     if not success:
+    #         return {"success": False, "message": "Failed to update genre in the database or genre does not exist."}
 
-        return {"success": True, "message": "Genre updated successfully."}
+    #     return {"success": True, "message": "Genre updated successfully."}
 
-    def delete_genre(self, genre_id):
-        """Deletes a genre (Admin functionality). Note: May fail due to FK constraints."""
-        success = self.genre_repo.delete_genre(genre_id)
-        if not success:
-            return {"success": False, "message": "Failed to delete genre in the database, likely due to existing movie associations."}
+    # def delete_genre(self, genre_id):
+    #     """Deletes a genre (Admin functionality). Note: May fail due to FK constraints."""
+    #     success = self.genre_repo.delete_genre(genre_id)
+    #     if not success:
+    #         return {"success": False, "message": "Failed to delete genre in the database, likely due to existing movie associations."}
 
-        return {"success": True, "message": "Genre deleted successfully."}
+    #     return {"success": True, "message": "Genre deleted successfully."}

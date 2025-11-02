@@ -3,7 +3,7 @@
 from database.db_connection import get_mysql_connection, close_connection
 from database.sql_queries import (
     GET_MOVIES_PAGINATED, COUNT_ALL_MOVIES, GET_MOVIE_BY_ID,
-    SEARCH_MOVIES_BY_TITLE, GET_DISTINCT_YEARS, GET_MIN_MAX_YEAR,
+    SEARCH_MOVIES_BY_TITLE, GET_DISTINCT_YEARS,
     INSERT_MOVIE, INSERT_MOVIE_GENRE, CHECK_GENRE_EXISTS, INSERT_GENRE,
     LIST_ALL_GENRES, GET_NEXT_GENRE_ID, GET_NEXT_TMDB_ID, UPDATE_MOVIE,
     DELETE_MOVIE_GENRES, DELETE_MOVIE
@@ -231,6 +231,56 @@ class MovieRepository:
         finally:
             cursor.close()
             close_connection(connection)
+
+
+# deprecated 
+# def search_by_title_like(self, search_term):
+#     """
+#     Fallback search using LIKE for short search terms or when FULLTEXT returns no results.
+#     """
+#     query = """
+#         SELECT tmdbID, title, releaseDate, poster, overview, runtime, link,
+#                (totalRatings/NULLIF(countRatings, 0)) as avgRating,
+#                countRatings
+#         FROM Movies
+#         WHERE title LIKE %s
+#         ORDER BY countRatings DESC, title ASC
+#         LIMIT 50
+#     """
+#     try:
+#         cursor = self.connection.cursor(dictionary=True)
+#         cursor.execute(query, (f"%{search_term}%",))
+#         results = cursor.fetchall()
+#         cursor.close()
+#         return results
+#     except Exception as e:
+#         print(f"Error in LIKE search: {e}")
+#         return []
+
+# def search_by_title(self, search_term):
+#     """
+#     Smart search that chooses the best method based on search term length.
+#     - Short terms (< 4 chars): Use LIKE search
+#     - Long terms: Use FULLTEXT, fallback to LIKE if no results
+#     """
+#     if not search_term or len(search_term.strip()) == 0:
+#         return []
+    
+#     search_term = search_term.strip()
+    
+#     # For very short search terms, FULLTEXT may not work due to minimum word length
+#     if len(search_term) < 4:
+#         return self.search_by_title_like(search_term)
+    
+#     # Try FULLTEXT search first
+#     results = self.search_by_title_fulltext(search_term)
+    
+#     # If FULLTEXT returns nothing, fall back to LIKE search
+#     if not results:
+#         results = self.search_by_title_like(search_term)
+    
+#     return results
+
 
     def count_search_results(self, search_term=None, genre=None, year=None, min_avg_rating=None):
         """Counts the total number of movies matching the search criteria."""
