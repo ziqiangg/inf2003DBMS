@@ -327,5 +327,33 @@ ORDER BY
     review_timeStamp DESC; -- Then by review timestamp descending for unrated movies with reviews
 """
 
+# --- Movie Statistics Queries ---
+# Query to get rating count for a movie
+GET_RATING_COUNT_FOR_MOVIE = """
+SELECT COUNT(*) as count FROM Ratings WHERE tmdbID = %s;
+"""
+
+# Query to get review count for a movie
+GET_REVIEW_COUNT_FOR_MOVIE = """
+SELECT COUNT(*) as count FROM Reviews WHERE tmdbID = %s;
+"""
+
+# --- Movie Deletion Queries ---
+# Query to delete all ratings for a movie
+DELETE_MOVIE_RATINGS = """
+DELETE FROM Ratings WHERE tmdbID = %s;
+"""
+
+# Query to delete all reviews for a movie
+DELETE_MOVIE_REVIEWS = """
+DELETE FROM Reviews WHERE tmdbID = %s;
+"""
+
+# --- Movie Aggregation Queries ---
+# Query to update movie's total ratings and count
+UPDATE_MOVIE_AGGREGATES = """
+UPDATE Movies SET totalRatings = %s, countRatings = %s WHERE tmdbID = %s;
+"""
+
 # Example: Query to get all cast and crew for a specific movie from MongoDB (this will be handled differently)
 # GET_MOVIE_CAST_CREW = "..." # This will likely be a MongoDB query handled in db_mongo_pre_function.py or a dedicated service

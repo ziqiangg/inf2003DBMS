@@ -6,7 +6,10 @@ from database.sql_queries import (
     SEARCH_MOVIES_BY_TITLE, GET_DISTINCT_YEARS,
     INSERT_MOVIE, INSERT_MOVIE_GENRE, CHECK_GENRE_EXISTS, INSERT_GENRE,
     LIST_ALL_GENRES, GET_NEXT_GENRE_ID, GET_NEXT_TMDB_ID, UPDATE_MOVIE,
-    DELETE_MOVIE_GENRES, DELETE_MOVIE
+    DELETE_MOVIE_GENRES, DELETE_MOVIE,
+    GET_RATING_COUNT_FOR_MOVIE, GET_REVIEW_COUNT_FOR_MOVIE,
+    DELETE_MOVIE_RATINGS, DELETE_MOVIE_REVIEWS,
+    UPDATE_MOVIE_AGGREGATES 
 )
 
 class MovieRepository:
@@ -193,12 +196,12 @@ class MovieRepository:
         cursor = connection.cursor(dictionary=True)
         try:
             # Get rating count
-            cursor.execute("SELECT COUNT(*) as count FROM Ratings WHERE tmdbID = %s", (tmdb_id,))
+            cursor.execute(GET_RATING_COUNT_FOR_MOVIE, (tmdb_id,))  
             rating_result = cursor.fetchone()
             rating_count = rating_result['count'] if rating_result else 0
             
             # Get review count
-            cursor.execute("SELECT COUNT(*) as count FROM Reviews WHERE tmdbID = %s", (tmdb_id,))
+            cursor.execute(GET_REVIEW_COUNT_FOR_MOVIE, (tmdb_id,))  
             review_result = cursor.fetchone()
             review_count = review_result['count'] if review_result else 0
             
@@ -608,10 +611,10 @@ class MovieRepository:
             
             # Delete all related data first
             # 1. Delete ratings
-            cursor.execute("DELETE FROM Ratings WHERE tmdbID = %s", (tmdb_id,))
+            cursor.execute(DELETE_MOVIE_RATINGS, (tmdb_id,))  
             
             # 2. Delete reviews
-            cursor.execute("DELETE FROM Reviews WHERE tmdbID = %s", (tmdb_id,))
+            cursor.execute(DELETE_MOVIE_REVIEWS, (tmdb_id,))  
             
             # 3. Delete movie-genre relationships
             cursor.execute(DELETE_MOVIE_GENRES, (tmdb_id,))
@@ -629,7 +632,33 @@ class MovieRepository:
             cursor.close()
             close_connection(connection)
 
+    def update_movie_aggregates(self, tmdb_id, total_ratings, count_ratings):
+        """Updates the aggregated rating sum and count for a movie.
     
+        Args:
+        tmdb_id (int): The movie's tmdbID
+        total_ratings (float): Sum of all ratings for the movie
+        count_ratings (int): Number of ratings for the movie
+        
+        Returns:
+        bool: True if successful, False otherwise
+        """
+        connection = get_mysql_connection()
+        if not connection:
+            return False
+
+        cursor = connection.cursor()
+        try:
+            cursor.execute(UPDATE_MOVIE_AGGREGATES, (total_ratings, count_ratings, tmdb_id))
+            connection.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            print(f"Error updating movie aggregates for tmdbID {tmdb_id}: {e}")
+            connection.rollback()
+            return False
+        finally:
+            cursor.close()
+            close_connection(connection)
 
 # Example usage (optional, for testing):
 # if __name__ == "__main__":

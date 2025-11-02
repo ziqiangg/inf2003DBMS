@@ -211,6 +211,41 @@ class MovieService:
                 "message": f"Failed to delete movie: {str(e)}"
             }
 
+    def get_movie_stats(self, tmdb_id):
+        """Gets statistics about a movie's ratings and reviews.
+    
+        Args:
+            tmdb_id (int): The tmdbID of the movie
+        
+        Returns:
+            dict: Dictionary containing rating_count and review_count
+        """
+        return self.movie_repo.get_movie_stats(tmdb_id)
+
+    def update_movie_aggregates(self, tmdb_id, total_ratings, count_ratings):
+        """Updates the aggregated rating statistics for a movie.
+    
+        Args:
+            tmdb_id (int): The movie's tmdbID
+            total_ratings (float): Sum of all ratings
+            count_ratings (int): Number of ratings
+        
+        Returns:
+            dict: Success status and message
+        """
+        success = self.movie_repo.update_movie_aggregates(tmdb_id, total_ratings, count_ratings)
+    
+        if not success:
+            return {
+                "success": False, 
+                "message": "Failed to update movie rating aggregates."
+            }
+    
+        return {
+            "success": True, 
+            "message": "Movie rating aggregates updated successfully."
+        }
+
 
 # Example usage (optional, for testing):
 # if __name__ == "__main__":

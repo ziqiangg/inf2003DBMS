@@ -279,8 +279,8 @@ class ProfileWindow(QWidget):
 
     def remove_user(self):
         """Handles the admin removing a user account with role validation."""
-        # First, get the full user data to check their role
-        user_data = self.user_service.user_repo.get_user_by_email(self.selected_user_email)
+        # F
+        user_data = self.user_service.get_user_by_email(self.selected_user_email)
         
         if not user_data:
             QMessageBox.warning(
@@ -380,13 +380,12 @@ class ProfileWindow(QWidget):
         if not hasattr(self, 'remove_user_button'):
             return
         
-        # Disable button if viewing own profile or if no user is selected
         if self.selected_user_id == self.current_user_id or not self.selected_user_id:
             self.remove_user_button.setEnabled(False)
             self.remove_user_button.setToolTip("Cannot remove your own account")
         else:
-            # Check if selected user is an admin
-            user_data = self.user_service.user_repo.get_user_by_email(self.selected_user_email)
+            # FIXED: Use service layer instead of repository
+            user_data = self.user_service.get_user_by_email(self.selected_user_email)
             if user_data and user_data.get('role') == 'admin':
                 self.remove_user_button.setEnabled(False)
                 self.remove_user_button.setToolTip("Cannot remove administrator accounts")
@@ -415,7 +414,8 @@ class ProfileWindow(QWidget):
             QMessageBox.warning(self, 'Search Error', 'Please enter an email address to search.')
             return
 
-        searched_user_data = self.user_service.user_repo.get_user_by_email(email_to_search)
+        # FIXED: Use service layer instead of repository
+        searched_user_data = self.user_service.get_user_by_email(email_to_search)
 
         if searched_user_data:
             self.selected_user_id = searched_user_data['userID']
@@ -490,7 +490,7 @@ class ProfileWindow(QWidget):
                         item_text += f"\nReview: {review_text}"
                     # Optionally, show timestamp if rating has one (though it's None from the query)
                     # item_text += f" (Time: {timestamp})" # This would show (Time: None) based on query
-                else: # rating_value is None, must be review-only
+                else:  # rating_value is None, must be review-only
                     item_text = f"{movie_title} - Review (No Rating) (Time: {timestamp})"
                     # Add the review text
                     item_text += f"\nReview: {review_text if review_text else 'No Review Text'}"

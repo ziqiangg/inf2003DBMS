@@ -94,16 +94,13 @@ class UserService:
         else:
             return {"success": False, "message": "Account deletion failed due to a database error."}
 
-
-# Example usage (optional, for testing):
-# if __name__ == "__main__":
-#     service = UserService()
-#     # Test registration
-#     reg_result = service.register_user("newuser@example.com", "password123")
-#     print("Registration result:", reg_result)
-#     # Test login
-#     login_result = service.login_user("newuser@example.com", "password123")
-#     print("Login result:", login_result)
-#     # Test admin login (assuming an admin user exists)
-#     admin_login_result = service.login_user("admin@example.com", "adminpassword")
-#     print("Admin Login result:", admin_login_result)
+    def get_user_by_email(self, email):
+        """Gets user data by email (for admin search functionality).
+        
+        Args:
+            email (str): User's email address
+            
+        Returns:
+            dict: User data if found, None otherwise
+        """
+        return self.user_repo.get_user_by_email(email)

@@ -706,8 +706,8 @@ class MovieCrudWindow(QWidget):
             QMessageBox.warning(self, "Validation Error", "At least one genre is required!")
             return
 
-        # Get movie stats
-        stats = self.movie_service.movie_repo.get_movie_stats(movie_data["tmdbID"])
+        # FIXED: Use service layer instead of repository
+        stats = self.movie_service.get_movie_stats(movie_data["tmdbID"])
         if stats["rating_count"] > 0 or stats["review_count"] > 0:
             stats_msg = []
             if stats["rating_count"] > 0:
@@ -746,8 +746,7 @@ class MovieCrudWindow(QWidget):
             QMessageBox.warning(self, "Warning", "Please select a movie to delete")
             return
 
-        # Get movie stats
-        stats = self.movie_service.movie_repo.get_movie_stats(movie_data["tmdbID"])
+        stats = self.movie_service.get_movie_stats(movie_data["tmdbID"])
         warning_msg = f"Are you sure you want to delete '{movie_data['title']}'?"
 
         if stats["rating_count"] > 0 or stats["review_count"] > 0:
