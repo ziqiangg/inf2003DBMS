@@ -1,20 +1,29 @@
 # database/repositories/user_repository.py
 
-from database.db_connection import get_mysql_connection, close_connection
+from database.db_connection import MySQLConnectionManager
 from database.sql_queries import (
     CHECK_USER_EXISTS_BY_EMAIL,
     INSERT_NEW_USER,
     GET_USER_BY_EMAIL,
     SOFT_DELETE_USER
 )
+import threading
 
 class UserRepository:
-    def __init__(self):
-        pass
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(UserRepository, cls).__new__(cls)
+                    cls._instance.db_manager = MySQLConnectionManager()
+        return cls._instance
 
     def check_user_exists(self, email):
         """Checks if a user already exists by email."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return False
         cursor = connection.cursor()
@@ -27,11 +36,11 @@ class UserRepository:
             return False
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def create_user(self, email, password_hash):
         """Creates a new user in the database."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return None
         cursor = connection.cursor()
@@ -46,11 +55,11 @@ class UserRepository:
             return None
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def get_user_by_email(self, email):
         """Retrieves user information by email."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return None
         cursor = connection.cursor(dictionary=True) # Use dictionary cursor for easier access
@@ -66,11 +75,11 @@ class UserRepository:
             return None
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def soft_delete_user(self, user_id):
         """Soft deletes a user by removing email and password (with transaction)."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return False
         
@@ -97,7 +106,7 @@ class UserRepository:
             return False
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
 # Example usage (optional, for testing):
 # if __name__ == "__main__":

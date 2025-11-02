@@ -3,14 +3,19 @@
 import sys
 from PyQt5.QtWidgets import QApplication
 from gui.gui_home import HomeWindow
-from database.db_connection import initialize_mysql_pool, shutdown_pool
-from database.db_mongo_connection import initialize_mongo_connection, close_mongo_connection
+from database.db_connection import MySQLConnectionManager
+from database.db_mongo_connection import MongoConnectionManager
 
 def main():
-    # Initialize connection pools before creating GUI
+    # Initialize singleton connection managers
     print("Initializing database connections...")
-    initialize_mysql_pool(pool_size=10)
-    initialize_mongo_connection()
+    
+    # Get singleton instances and initialize
+    mysql_manager = MySQLConnectionManager()
+    mongo_manager = MongoConnectionManager()
+    
+    mysql_manager.initialize_pool(pool_size=10)
+    mongo_manager.initialize_connection()
     
     app = QApplication(sys.argv)
     
@@ -21,8 +26,8 @@ def main():
     exit_code = app.exec_()
     
     print("Shutting down database connections...")
-    shutdown_pool()
-    close_mongo_connection()
+    mysql_manager.shutdown_pool()
+    mongo_manager.close_connection()
     
     sys.exit(exit_code)
 

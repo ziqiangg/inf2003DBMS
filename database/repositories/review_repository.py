@@ -1,18 +1,27 @@
 # database/repositories/review_repository.py
-from database.db_connection import get_mysql_connection, close_connection
+from database.db_connection import MySQLConnectionManager
 from database.sql_queries import (
     INSERT_REVIEW, UPDATE_REVIEW, DELETE_REVIEW,
     GET_REVIEW_BY_USER_AND_MOVIE, GET_REVIEWS_FOR_MOVIE, 
     GET_USER_REVIEWS
 )
+import threading
 
 class ReviewRepository:
-    def __init__(self):
-        pass
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(ReviewRepository, cls).__new__(cls)
+                    cls._instance.db_manager = MySQLConnectionManager()
+        return cls._instance
 
     def create_review(self, user_id, tmdb_id, review_text):
         """Inserts a new review or updates if it exists."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return False
 
@@ -32,11 +41,11 @@ class ReviewRepository:
             return False
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def update_review(self, user_id, tmdb_id, new_review_text):
         """Updates an existing review."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return False
 
@@ -51,11 +60,11 @@ class ReviewRepository:
             return False
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def delete_review(self, user_id, tmdb_id):
         """Deletes a review."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return False
 
@@ -70,11 +79,11 @@ class ReviewRepository:
             return False
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def get_review_by_user_and_movie(self, user_id, tmdb_id):
         """Fetches a specific review by user and movie."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return None
 
@@ -88,11 +97,11 @@ class ReviewRepository:
             return None
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def get_reviews_for_movie(self, tmdb_id):
         """Fetches the 3 most recent reviews for a specific movie."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return []
 
@@ -106,14 +115,11 @@ class ReviewRepository:
             return []
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def get_reviews_for_user(self, user_id):
-        """
-        Fetches all reviews written by a specific user, sorted by timestamp descending.
-        This method uses the existing GET_USER_REVIEWS query.
-        """
-        connection = get_mysql_connection()
+        """Fetches all reviews written by a specific user, sorted by timestamp descending."""
+        connection = self.db_manager.get_connection()
         if not connection:
             return []
 
@@ -127,4 +133,4 @@ class ReviewRepository:
             return []
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)

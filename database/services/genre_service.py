@@ -1,9 +1,18 @@
 # database/services/genre_service.py
 from database.repositories.genre_repository import GenreRepository
+import threading
 
 class GenreService:
-    def __init__(self):
-        self.genre_repo = GenreRepository()
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(GenreService, cls).__new__(cls)
+                    cls._instance.genre_repo = GenreRepository()
+        return cls._instance
 
     def get_all_genres(self):
         """Retrieves all genres.

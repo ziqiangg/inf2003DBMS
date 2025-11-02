@@ -1,9 +1,18 @@
 # database/services/review_service.py
 from database.repositories.review_repository import ReviewRepository
+import threading
 
 class ReviewService:
-    def __init__(self):
-        self.review_repo = ReviewRepository()
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(ReviewService, cls).__new__(cls)
+                    cls._instance.review_repo = ReviewRepository()
+        return cls._instance
 
     def add_review(self, user_id, tmdb_id, review_text):
         """Adds or updates a review."""

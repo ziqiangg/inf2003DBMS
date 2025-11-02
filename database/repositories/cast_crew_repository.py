@@ -1,20 +1,28 @@
 # database/repositories/cast_crew_repository.py
-from database.db_mongo_connection import get_mongo_connection
+from database.db_mongo_connection import MongoConnectionManager
 from pymongo.errors import PyMongoError
+import threading
 
 class CastCrewRepository:
-    def __init__(self):
-        # Don't store connection or collections - get fresh ones per operation
-        pass
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(CastCrewRepository, cls).__new__(cls)
+                    cls._instance.mongo_manager = MongoConnectionManager()
+        return cls._instance
 
     def _get_cast_collection(self):
         """Helper to get cast collection for each operation."""
-        db = get_mongo_connection()
+        db = self.mongo_manager.get_database()
         return db['MovieCastLink'] if db is not None else None
 
     def _get_crew_collection(self):
         """Helper to get crew collection for each operation."""
-        db = get_mongo_connection()
+        db = self.mongo_manager.get_database()
         return db['MovieCrewLink'] if db is not None else None
 
     def get_cast_for_movie(self, tmdb_id):

@@ -1,17 +1,26 @@
 # database/repositories/genre_repository.py
-from database.db_connection import get_mysql_connection, close_connection
+from database.db_connection import MySQLConnectionManager
 from database.sql_queries import (
     GET_ALL_GENRES, GET_GENRES_FOR_MOVIE, GET_MOVIES_BY_GENRE,
     INSERT_GENRE
 )
+import threading
 
 class GenreRepository:
-    def __init__(self):
-        pass
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(GenreRepository, cls).__new__(cls)
+                    cls._instance.db_manager = MySQLConnectionManager()
+        return cls._instance
 
     def get_all_genres(self):
         """Fetches all genres ordered by name."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return []
 
@@ -25,11 +34,11 @@ class GenreRepository:
             return []
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def get_genres_for_movie(self, tmdb_id):
         """Fetches genres associated with a specific movie."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return []
 
@@ -43,11 +52,11 @@ class GenreRepository:
             return []
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def get_movies_by_genre(self, genre_name):
         """Fetches movies associated with a specific genre."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return []
 
@@ -61,11 +70,11 @@ class GenreRepository:
             return []
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def create_genre(self, genre_name):
         """Inserts a new genre."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return False
 
@@ -80,7 +89,7 @@ class GenreRepository:
             return False
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     #should technically not be possible to update genre names
     # def update_genre(self, genre_id, new_genre_name):

@@ -308,9 +308,6 @@ ORDER BY rev.timeStamp DESC;
 """
 
 # Query to get both ratings and reviews for a specific user, unified for sorting on profile page
-# This query gets ratings with their rating value and a NULL review
-# It gets reviews for movies without ratings with a NULL rating and the review timestamp
-# Then it combines them and sorts primarily by rating DESC, then by review timestamp DESC (or another suitable field for unrated movies)
 GET_USER_RATINGS_AND_REVIEWS_UNIFIED = """
 (
     -- Get all ratings for the user, including the movie title
@@ -318,9 +315,9 @@ GET_USER_RATINGS_AND_REVIEWS_UNIFIED = """
         r.tmdbID,
         m.title,
         r.rating,
-        NULL as review_text, -- No review for this entry
-        NULL as rating_timeStamp, -- Ratings table does not have timeStamp, so use NULL
-        NULL as review_timeStamp -- No review timestamp in this part
+        NULL as review_text,
+        NULL as rating_timeStamp,
+        NULL as review_timeStamp
     FROM Ratings r
     JOIN Movies m ON r.tmdbID = m.tmdbID
     WHERE r.userID = %s
@@ -331,20 +328,19 @@ UNION ALL
     SELECT
         rev.tmdbID,
         m.title,
-        NULL as rating, -- No rating for this entry
+        NULL as rating,
         rev.review as review_text,
-        NULL as rating_timeStamp, -- No rating timestamp in this part
-        rev.timeStamp as review_timeStamp -- Include review timestamp
+        NULL as rating_timeStamp,
+        rev.timeStamp as review_timeStamp
     FROM Reviews rev
     JOIN Movies m ON rev.tmdbID = m.tmdbID
     WHERE rev.userID = %s
       AND rev.tmdbID NOT IN (SELECT tmdbID FROM Ratings WHERE userID = %s)
 )
 ORDER BY
-    -- Sort primarily by rating descending (NULL ratings come last)
-    CASE WHEN rating IS NOT NULL THEN 0 ELSE 1 END, -- Put rated movies first
-    rating DESC, -- Then by rating value descending
-    review_timeStamp DESC; -- Then by review timestamp descending for unrated movies with reviews
+    CASE WHEN rating IS NOT NULL THEN 0 ELSE 1 END,
+    rating DESC,
+    review_timeStamp DESC;
 """
 
 # --- Movie Statistics Queries ---
