@@ -255,3 +255,10 @@ python main.py
 
 ## Project Architecture
 ![Schema Diagram](images/schema.png)
+
+## Concurrent User Testing
+To conduct a concurrent user test, please run the concurrent_test.py and observe the results of the main features of the application.
+
+Below is a table of the results.
+
+![test results](images/test_result.png)
