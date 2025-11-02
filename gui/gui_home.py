@@ -641,7 +641,7 @@ class HomeWindow(QWidget):
             url = reply.url().toString()
         except Exception:
             url = '<unknown>'
-        print(f"DEBUG: _on_image_reply_finished for {url}")
+        # print(f"DEBUG: _on_image_reply_finished for {url}")
 
         label_ref, movie_title = self._handle_reply_once(reply)
         if label_ref is None:
@@ -664,7 +664,7 @@ class HomeWindow(QWidget):
             url = reply.url().toString()
         except Exception:
             url = '<unknown>'
-        print(f"DEBUG: _on_image_reply_error code={code} for {url}")
+        # print(f"DEBUG: _on_image_reply_error code={code} for {url}")
 
         label_ref, movie_title = self._handle_reply_once(reply)
         if label_ref is None:

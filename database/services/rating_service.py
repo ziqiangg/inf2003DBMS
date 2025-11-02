@@ -3,11 +3,21 @@ from database.repositories.rating_repository import RatingRepository
 from database.services.review_service import ReviewService  
 from database.services.movie_service import MovieService   
 
+import threading
+
 class RatingService:
-    def __init__(self):
-        self.rating_repo = RatingRepository()
-        self.review_service = ReviewService()  
-        self.movie_service = MovieService()    
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(RatingService, cls).__new__(cls)
+                    cls._instance.rating_repo = RatingRepository()
+                    cls._instance.review_service = ReviewService()
+                    cls._instance.movie_service = MovieService()
+        return cls._instance
 
     def add_rating(self, user_id, tmdb_id, rating_value):
         """Adds or updates a rating (repository now handles atomic updates)."""
@@ -89,11 +99,12 @@ class RatingService:
         }
 
     def get_user_ratings_and_reviews_for_profile(self, user_id):
-        """
-        Retrieves all ratings and reviews for a specific user, combined into a single list
-        sorted primarily by rating (descending), then by review timestamp (descending) for movies only reviewed.
-        """
+        """Retrieves all ratings and reviews for a specific user, combined into a single list."""
+        print(f"DEBUG: RatingService.get_user_ratings_and_reviews_for_profile: Called for userID {user_id}")
+        
         combined_results = self.rating_repo.get_user_ratings_and_reviews_unified(user_id)
+        
+        print(f"DEBUG: RatingService.get_user_ratings_and_reviews_for_profile: Received {len(combined_results)} results from repository")
 
         processed_list = []
         for item in combined_results:
@@ -112,6 +123,8 @@ class RatingService:
 
             processed_list.append(processed_item)
 
+        print(f"DEBUG: RatingService.get_user_ratings_and_reviews_for_profile: Processed {len(processed_list)} items")
+        
         return {
             "success": True,
             "interactions": processed_list

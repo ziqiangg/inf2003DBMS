@@ -2,11 +2,20 @@
 
 import hashlib
 import re
+import threading
 from database.repositories.user_repository import UserRepository
 
 class UserService:
-    def __init__(self):
-        self.user_repo = UserRepository()
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(UserService, cls).__new__(cls)
+                    cls._instance.user_repo = UserRepository()
+        return cls._instance
 
     def hash_password(self, password):
         """Hashes the password using SHA-256."""

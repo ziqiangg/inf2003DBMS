@@ -1,10 +1,19 @@
 # database/services/movie_service.py
 
 from database.repositories.movie_repository import MovieRepository
+import threading
 
 class MovieService:
-    def __init__(self):
-        self.movie_repo = MovieRepository()
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(MovieService, cls).__new__(cls)
+                    cls._instance.movie_repo = MovieRepository()
+        return cls._instance
         
     def create_movie(self, movie_data):
         """Creates a new movie with associated genres.

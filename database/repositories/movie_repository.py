@@ -1,6 +1,6 @@
 # database/repositories/movie_repository.py
 
-from database.db_connection import get_mysql_connection, close_connection
+from database.db_connection import MySQLConnectionManager
 from database.sql_queries import (
     GET_MOVIES_PAGINATED, COUNT_ALL_MOVIES, GET_MOVIE_BY_ID,
     SEARCH_MOVIES_BY_TITLE, GET_DISTINCT_YEARS,
@@ -12,14 +12,23 @@ from database.sql_queries import (
     DELETE_MOVIE_RATINGS, DELETE_MOVIE_REVIEWS,
     UPDATE_MOVIE_AGGREGATES 
 )
+import threading
 
 class MovieRepository:
-    def __init__(self):
-        pass
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(MovieRepository, cls).__new__(cls)
+                    cls._instance.db_manager = MySQLConnectionManager()
+        return cls._instance
         
     def create_movie(self, movie_data):
         """Creates a new movie with genres in a transaction."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return None  # Changed from dict to None
         
@@ -73,11 +82,11 @@ class MovieRepository:
             return None  # Return None on failure
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def get_movies_paginated(self, page_number, movies_per_page):
         """Fetches a specific page of movies."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return [], 0 # Return empty list and 0 total count on connection failure
         cursor = connection.cursor(dictionary=True)
@@ -91,11 +100,11 @@ class MovieRepository:
             return [], 0 # Return empty list on error
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def count_all_movies(self):
         """Counts the total number of movies in the database."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return 0
         cursor = connection.cursor(dictionary=True)
@@ -108,11 +117,11 @@ class MovieRepository:
             return 0
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def get_movie_by_id(self, tmdb_id):
         """Fetches a single movie by its TMDB ID."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return None
         cursor = connection.cursor(dictionary=True)
@@ -125,7 +134,7 @@ class MovieRepository:
             return None
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
             
     def get_movie_stats(self, tmdb_id):
         """Get stats about a movie's ratings and reviews.
@@ -138,7 +147,7 @@ class MovieRepository:
                 - rating_count: Number of ratings
                 - review_count: Number of reviews
         """
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return {"rating_count": 0, "review_count": 0}
             
@@ -163,11 +172,11 @@ class MovieRepository:
             return {"rating_count": 0, "review_count": 0}
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def search_movies_by_title(self, search_term):
         """Fetches movies matching the search term in the title."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return []
         cursor = connection.cursor(dictionary=True)
@@ -182,7 +191,7 @@ class MovieRepository:
             return []
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def search_movies_by_title_fulltext(self, search_term, use_boolean=False):
         """Searches movies using FULLTEXT indexing for better performance.
@@ -194,7 +203,7 @@ class MovieRepository:
         Returns:
             list: List of matching movies with relevance scores
         """
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return []
         cursor = connection.cursor(dictionary=True)
@@ -210,7 +219,7 @@ class MovieRepository:
             return []
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def search_movies_by_title_like(self, search_term):
         """Fallback search using LIKE for short search terms.
@@ -221,7 +230,7 @@ class MovieRepository:
         Returns:
             list: List of matching movies
         """
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return []
         cursor = connection.cursor(dictionary=True)
@@ -235,7 +244,7 @@ class MovieRepository:
             return []
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def smart_search_by_title(self, search_term):
         """Smart search that chooses the best method based on search term length.
@@ -325,7 +334,7 @@ class MovieRepository:
         
         Uses FULLTEXT for title-only searches with 4+ characters.
         """
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return 0
         cursor = connection.cursor(dictionary=True)
@@ -390,7 +399,7 @@ class MovieRepository:
             return 0
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def search_movies(self, search_term=None, genre=None, year=None, min_avg_rating=None, offset=0, limit=None):
         """Searches movies by optional title, genre and year filters with pagination.
@@ -417,7 +426,7 @@ class MovieRepository:
         if not search_term and not genre and not year and min_avg_rating is None:
             return []
 
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return []
 
@@ -519,7 +528,7 @@ class MovieRepository:
             return []
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def get_available_years(self):
         """Returns a list of years actually present in Movies.releaseDate, descending.
@@ -527,7 +536,7 @@ class MovieRepository:
         This uses the `GET_DISTINCT_YEARS` query so the dropdown reflects only
         years that exist in the database (no artificial continuous ranges).
         """
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return []
         cursor = connection.cursor(dictionary=True)
@@ -549,11 +558,11 @@ class MovieRepository:
             return []
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def update_movie(self, movie_data):
         """Updates an existing movie with transaction."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return False
         
@@ -569,7 +578,7 @@ class MovieRepository:
                 movie_data.get('title'),
                 movie_data.get('link'),
                 movie_data.get('runtime'),
-                movie_data.get('poster'),
+                movie_data.get('poster'),  # Added missing closing parenthesis
                 movie_data.get('overview'),
                 movie_data.get('releaseDate'),
                 tmdb_id
@@ -606,11 +615,11 @@ class MovieRepository:
             return False
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def delete_movie(self, tmdb_id):
         """Deletes a movie and all associated data in a transaction."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return False
         
@@ -641,7 +650,7 @@ class MovieRepository:
             return False
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def update_movie_aggregates(self, tmdb_id, total_ratings, count_ratings):
         """Updates the aggregated rating sum and count for a movie.
@@ -654,7 +663,7 @@ class MovieRepository:
         Returns:
         bool: True if successful, False otherwise
         """
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return False
 
@@ -669,7 +678,7 @@ class MovieRepository:
             return False
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
 # Example usage (optional, for testing):
 # if __name__ == "__main__":

@@ -1,9 +1,18 @@
 # database/services/cast_crew_service.py
 from database.repositories.cast_crew_repository import CastCrewRepository
+import threading
 
 class CastCrewService:
-    def __init__(self):
-        self.cast_crew_repo = CastCrewRepository()
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(CastCrewService, cls).__new__(cls)
+                    cls._instance.cast_crew_repo = CastCrewRepository()
+        return cls._instance
 
     def get_full_cast_and_crew(self, tmdb_id):
         """Retrieves both cast and crew for a specific movie."""

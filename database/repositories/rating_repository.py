@@ -1,19 +1,28 @@
 # database/repositories/rating_repository.py
-from database.db_connection import get_mysql_connection, close_connection
+from database.db_connection import MySQLConnectionManager
 from database.sql_queries import (
     GET_USER_RATINGS_AND_REVIEWS_UNIFIED, INSERT_RATING, UPDATE_RATING, DELETE_RATING,
     GET_RATING_BY_USER_AND_MOVIE, GET_RATINGS_FOR_MOVIE,
     GET_SUM_AND_COUNT_RATINGS_FOR_MOVIE, GET_USER_RATINGS,
     UPDATE_MOVIE_AGGREGATES_ATOMIC  # Add this import
 )
+import threading
 
 class RatingRepository:
-    def __init__(self):
-        pass
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(RatingRepository, cls).__new__(cls)
+                    cls._instance.db_manager = MySQLConnectionManager()
+        return cls._instance
 
     def create_rating(self, user_id, tmdb_id, rating):
         """Inserts a new rating or updates if it exists, with atomic aggregate update."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return False
 
@@ -38,11 +47,11 @@ class RatingRepository:
             return False
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def update_rating(self, user_id, tmdb_id, new_rating):
         """Updates an existing rating with atomic aggregate update."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return False
 
@@ -72,11 +81,11 @@ class RatingRepository:
             return False
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def delete_rating(self, user_id, tmdb_id):
         """Deletes a rating with atomic aggregate update."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return False
 
@@ -106,11 +115,11 @@ class RatingRepository:
             return False
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def get_rating_by_user_and_movie(self, user_id, tmdb_id):
         """Fetches a specific rating by user and movie."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return None
 
@@ -124,11 +133,11 @@ class RatingRepository:
             return None
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def get_ratings_for_movie(self, tmdb_id):
         """Fetches all ratings for a specific movie."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return []
 
@@ -142,11 +151,11 @@ class RatingRepository:
             return []
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def get_sum_and_count_ratings_for_movie(self, tmdb_id):
         """Fetches the sum and count of ratings for a specific movie."""
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return 0.0, 0 # Return 0 for sum and 0 for count if connection fails
         cursor = connection.cursor(dictionary=True)
@@ -161,14 +170,14 @@ class RatingRepository:
             return 0.0, 0 # Return 0 for sum and 0 for count on error
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     def get_ratings_for_user_sorted_by_rating(self, user_id):
         """
         Fetches all ratings for a specific user, including movie titles, sorted by rating descending.
         This method uses the existing GET_USER_RATINGS query.
         """
-        connection = get_mysql_connection()
+        connection = self.db_manager.get_connection()
         if not connection:
             return []
 
@@ -182,27 +191,48 @@ class RatingRepository:
             return []
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
 
     #for profile page
     def get_user_ratings_and_reviews_unified(self, user_id):
-        """
-        Fetches all ratings and reviews for a specific user, unified into a single list
-        sorted primarily by rating (descending), then by review timestamp (descending) for unrated movies with reviews.
-        """
-        connection = get_mysql_connection()
+        """Fetches all ratings and reviews for a specific user, unified into a single list."""
+        connection = self.db_manager.get_connection()
         if not connection:
+            print(f"ERROR: RatingRepository.get_user_ratings_and_reviews_unified: No connection for userID {user_id}")
             return []
 
         cursor = connection.cursor(dictionary=True)
         try:
+            print(f"DEBUG: RatingRepository.get_user_ratings_and_reviews_unified: Executing query for userID {user_id}")
+            print(f"DEBUG: Query: {GET_USER_RATINGS_AND_REVIEWS_UNIFIED}")
+            print(f"DEBUG: Parameters: ({user_id}, {user_id}, {user_id})")
+            
             # Execute the unified query, passing the user_id three times for the subquery
             cursor.execute(GET_USER_RATINGS_AND_REVIEWS_UNIFIED, (user_id, user_id, user_id))
             results = cursor.fetchall()
+            
+            print(f"DEBUG: RatingRepository.get_user_ratings_and_reviews_unified: Query returned {len(results)} rows")
+            if len(results) > 0:
+                print(f"DEBUG: First result: {results[0]}")
+            else:
+                print(f"DEBUG: No results returned from database for userID {user_id}")
+                
+                # Additional debugging - check if user has any ratings at all
+                cursor.execute("SELECT COUNT(*) as count FROM Ratings WHERE userID = %s", (user_id,))
+                rating_count = cursor.fetchone()
+                print(f"DEBUG: User has {rating_count['count']} total ratings in Ratings table")
+                
+                # Check if user has any reviews
+                cursor.execute("SELECT COUNT(*) as count FROM Reviews WHERE userID = %s", (user_id,))
+                review_count = cursor.fetchone()
+                print(f"DEBUG: User has {review_count['count']} total reviews in Reviews table")
+            
             return results
         except Exception as e:
-            print(f"Error fetching unified ratings and reviews for user {user_id}: {e}")
+            print(f"ERROR: RatingRepository.get_user_ratings_and_reviews_unified: Exception for userID {user_id}: {e}")
+            import traceback
+            traceback.print_exc()
             return []
         finally:
             cursor.close()
-            close_connection(connection)
+            self.db_manager.close_connection(connection)
