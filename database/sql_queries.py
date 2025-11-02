@@ -89,6 +89,31 @@ FROM Movies m
 WHERE m.title LIKE %s;
 """
 
+# Query for FULLTEXT search on movie titles (optimized for longer search terms)
+SEARCH_MOVIES_BY_TITLE_FULLTEXT = """
+SELECT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, m.runtime, m.totalRatings, m.countRatings,
+       MATCH(m.title) AGAINST(%s IN NATURAL LANGUAGE MODE) AS relevance_score
+FROM Movies m
+WHERE MATCH(m.title) AGAINST(%s IN NATURAL LANGUAGE MODE)
+ORDER BY relevance_score DESC, m.releaseDate DESC
+LIMIT 50;
+"""
+
+# Query for FULLTEXT search with BOOLEAN MODE (for advanced search patterns)
+SEARCH_MOVIES_BY_TITLE_FULLTEXT_BOOLEAN = """
+SELECT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, m.runtime, m.totalRatings, m.countRatings,
+       MATCH(m.title) AGAINST(%s IN BOOLEAN MODE) AS relevance_score
+FROM Movies m
+WHERE MATCH(m.title) AGAINST(%s IN BOOLEAN MODE)
+ORDER BY relevance_score DESC, m.releaseDate DESC
+LIMIT 50;
+"""
+
+# Get all distinct years present in Movies.releaseDate (for populating year dropdowns)
+GET_DISTINCT_YEARS = """
+SELECT DISTINCT YEAR(releaseDate) as year FROM Movies WHERE releaseDate IS NOT NULL ORDER BY year DESC;
+"""
+
 # # Base query for movie search with all filters
 # BASE_MOVIE_SEARCH = """
 # SELECT DISTINCT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, 
@@ -141,11 +166,6 @@ WHERE m.title LIKE %s;
 # WHERE YEAR(m.releaseDate) = %s
 # ORDER BY m.releaseDate DESC, m.tmdbID DESC;
 # """
-
-# Get all distinct years present in Movies.releaseDate (for populating year dropdowns)
-GET_DISTINCT_YEARS = """
-SELECT DISTINCT YEAR(releaseDate) as year FROM Movies WHERE releaseDate IS NOT NULL ORDER BY year DESC;
-"""
 
 # # Get the minimum and maximum year present in Movies.releaseDate
 # GET_MIN_MAX_YEAR = """

@@ -136,26 +136,6 @@ class RatingRepository:
             cursor.close()
             close_connection(connection)
 
-    # def get_average_rating_for_movie(self, tmdb_id): THIS IS WRONG I THINK, THE SQL IS ALSO NOT USED
-    #     """Fetches the average rating and count for a specific movie."""
-    #     connection = get_mysql_connection()
-    #     if not connection:
-    #         return 0.0, 0
-
-    #     cursor = connection.cursor(dictionary=True)
-    #     try:
-    #         cursor.execute(GET_AVERAGE_RATING_FOR_MOVIE, (tmdb_id,))
-    #         result = cursor.fetchone()
-    #         avg_rating = result['avg_rating'] if result['avg_rating'] is not None else 0.0
-    #         count_rating = result['rating_count'] if result['rating_count'] is not None else 0
-    #         return float(avg_rating), int(count_rating)
-    #     except Exception as e:
-    #         print(f"Error fetching average rating for movie: {e}")
-    #         return 0.0, 0
-    #     finally:
-    #         cursor.close()
-    #         close_connection(connection)
-
     def get_ratings_for_user_sorted_by_rating(self, user_id):
         """
         Fetches all ratings for a specific user, including movie titles, sorted by rating descending.
