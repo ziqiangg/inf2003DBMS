@@ -4,7 +4,6 @@ from database.db_connection import get_mysql_connection, close_connection
 from database.sql_queries import (
     GET_MOVIES_PAGINATED, COUNT_ALL_MOVIES, GET_MOVIE_BY_ID,
     SEARCH_MOVIES_BY_TITLE, GET_DISTINCT_YEARS,
-    SEARCH_MOVIES_BY_TITLE_FULLTEXT, SEARCH_MOVIES_BY_TITLE_FULLTEXT_BOOLEAN,
     INSERT_MOVIE, INSERT_MOVIE_GENRE, CHECK_GENRE_EXISTS, INSERT_GENRE,
     LIST_ALL_GENRES, GET_NEXT_GENRE_ID, GET_NEXT_TMDB_ID, UPDATE_MOVIE,
     DELETE_MOVIE_GENRES, DELETE_MOVIE,
@@ -236,92 +235,6 @@ class MovieRepository:
             cursor.close()
             close_connection(connection)
 
-    def search_movies_by_title_fulltext(self, search_term, use_boolean=False):
-        """Searches movies using FULLTEXT indexing for better performance.
-        
-        Args:
-            search_term (str): The search term
-            use_boolean (bool): Whether to use BOOLEAN MODE for advanced patterns
-            
-        Returns:
-            list: List of matching movies with relevance scores
-        """
-        connection = get_mysql_connection()
-        if not connection:
-            return []
-        cursor = connection.cursor(dictionary=True)
-        try:
-            if use_boolean:
-                cursor.execute(SEARCH_MOVIES_BY_TITLE_FULLTEXT_BOOLEAN, (search_term, search_term))
-            else:
-                cursor.execute(SEARCH_MOVIES_BY_TITLE_FULLTEXT, (search_term, search_term))
-            movies = cursor.fetchall()
-            return movies
-        except Exception as e:
-            print(f"Error in FULLTEXT search: {e}")
-            return []
-        finally:
-            cursor.close()
-            close_connection(connection)
-
-    def search_movies_by_title_like(self, search_term):
-        """Fallback search using LIKE for short search terms.
-        
-        Args:
-            search_term (str): The search term
-            
-        Returns:
-            list: List of matching movies
-        """
-        connection = get_mysql_connection()
-        if not connection:
-            return []
-        cursor = connection.cursor(dictionary=True)
-        try:
-            search_pattern = f"%{search_term}%"
-            cursor.execute(SEARCH_MOVIES_BY_TITLE, (search_pattern,))
-            movies = cursor.fetchall()
-            return movies
-        except Exception as e:
-            print(f"Error in LIKE search: {e}")
-            return []
-        finally:
-            cursor.close()
-            close_connection(connection)
-
-    def smart_search_by_title(self, search_term):
-        """Smart search that chooses the best method based on search term length.
-        
-        - Very short terms (< 3 chars): Use LIKE search
-        - Short terms (3 chars): Use LIKE search  
-        - Medium/Long terms (4+ chars): Use FULLTEXT, fallback to LIKE if no results
-        
-        Args:
-            search_term (str): The search term
-            
-        Returns:
-            list: List of matching movies
-        """
-        if not search_term or len(search_term.strip()) == 0:
-            return []
-        
-        search_term = search_term.strip()
-        
-        # For very short search terms, FULLTEXT won't work due to minimum word length (default 4)
-        if len(search_term) < 4:
-            print(f"DEBUG: Using LIKE search for short term: '{search_term}'")
-            return self.search_movies_by_title_like(search_term)
-        
-        # Try FULLTEXT search first for longer terms
-        print(f"DEBUG: Trying FULLTEXT search for term: '{search_term}'")
-        results = self.search_movies_by_title_fulltext(search_term)
-        
-        # If FULLTEXT returns nothing, fall back to LIKE search
-        if not results:
-            print(f"DEBUG: FULLTEXT returned no results, falling back to LIKE search")
-            results = self.search_movies_by_title_like(search_term)
-        
-        return results
 
 # deprecated 
 # def search_by_title_like(self, search_term):
@@ -373,66 +286,60 @@ class MovieRepository:
 
 
     def count_search_results(self, search_term=None, genre=None, year=None, min_avg_rating=None):
-        """Counts the total number of movies matching the search criteria.
-        
-        Uses FULLTEXT for title-only searches with 4+ characters.
-        """
+        """Counts the total number of movies matching the search criteria."""
+        print(f"DEBUG: Counting search results with year param: {year}")
         connection = get_mysql_connection()
         if not connection:
             return 0
         cursor = connection.cursor(dictionary=True)
         try:
-            # Use FULLTEXT for counting when applicable
-            use_fulltext = (search_term and len(search_term) >= 4 and 
-                          not genre and not year and min_avg_rating is None)
+            # Base select for COUNT only
+            query = "SELECT COUNT(DISTINCT m.tmdbID) as total FROM Movies m"
+            params = []
             
-            if use_fulltext:
-                # Count FULLTEXT results
-                query = """
-                SELECT COUNT(DISTINCT m.tmdbID) as total 
-                FROM Movies m
-                WHERE MATCH(m.title) AGAINST(%s IN NATURAL LANGUAGE MODE)
-                """
-                params = [search_term]
-            else:
-                # Build dynamic count query
-                query = "SELECT COUNT(DISTINCT m.tmdbID) as total FROM Movies m"
-                params = []
-                
-                if genre:
-                    query += " JOIN Movie_Genre mg ON m.tmdbID = mg.tmdbID JOIN Genre g ON mg.genreID = g.genreID"
+            # Add joins if genre filter is used
+            if genre:
+                query += " JOIN Movie_Genre mg ON m.tmdbID = mg.tmdbID JOIN Genre g ON mg.genreID = g.genreID"
 
-                where_clauses = []
-                if search_term:
-                    where_clauses.append("m.title LIKE %s")
-                    params.append(f"%{search_term}%")
-                if genre:
-                    where_clauses.append("g.genreName = %s")
-                    params.append(genre)
-                if isinstance(year, (list, tuple)) and len(year) == 2:
-                    min_year, max_year = year
-                    try:
-                        min_year = int(min_year) if min_year is not None else None
-                        max_year = int(max_year) if max_year is not None else None
-                        
-                        if min_year is not None and max_year is not None:
-                            where_clauses.append("YEAR(m.releaseDate) BETWEEN %s AND %s")
-                            params.extend([min_year, max_year])
-                    except (TypeError, ValueError):
-                        pass
-                elif year:
-                    try:
-                        year_int = int(year)
-                        where_clauses.append("YEAR(m.releaseDate) = %s")
-                        params.append(year_int)
-                    except (TypeError, ValueError):
-                        pass
-                if min_avg_rating is not None:
-                    where_clauses.append("(CASE WHEN m.countRatings > 0 THEN m.totalRatings / m.countRatings ELSE 0 END) >= %s")
-                    params.append(float(min_avg_rating))
+            # Base select for COUNT only
+            query = "SELECT COUNT(DISTINCT m.tmdbID) as total FROM Movies m"
+            params = []
+            # Add joins if genre filter is used
+            if genre:
+                query += " JOIN Movie_Genre mg ON m.tmdbID = mg.tmdbID JOIN Genre g ON mg.genreID = g.genreID"
 
-                if where_clauses:
-                    query += " WHERE " + " AND ".join(where_clauses)
+            where_clauses = []
+            if search_term:
+                where_clauses.append("m.title LIKE %s")
+                params.append(f"%{search_term}%")
+            if genre:
+                where_clauses.append("g.genreName = %s")
+                params.append(genre)
+            if isinstance(year, (list, tuple)) and len(year) == 2:
+                min_year, max_year = year
+                try:
+                    min_year = int(min_year) if min_year is not None else None
+                    max_year = int(max_year) if max_year is not None else None
+                    
+                    if min_year is not None and max_year is not None:
+                        where_clauses.append("YEAR(m.releaseDate) BETWEEN %s AND %s")
+                        params.extend([min_year, max_year])
+                        print(f"DEBUG: Added year range condition to count query: {min_year}-{max_year}")
+                except (TypeError, ValueError) as e:
+                    print(f"DEBUG: Error converting year values in count query: {e}")
+            elif year:
+                try:
+                    year_int = int(year)
+                    where_clauses.append("YEAR(m.releaseDate) = %s")
+                    params.append(year_int)
+                except (TypeError, ValueError):
+                    pass
+            if min_avg_rating is not None:
+                where_clauses.append("(CASE WHEN m.countRatings > 0 THEN m.totalRatings / m.countRatings ELSE 0 END) >= %s")
+                params.append(float(min_avg_rating))
+
+            if where_clauses:
+                query += " WHERE " + " AND ".join(where_clauses)
 
             cursor.execute(query, tuple(params))
             result = cursor.fetchone()
@@ -446,8 +353,10 @@ class MovieRepository:
 
     def search_movies(self, search_term=None, genre=None, year=None, min_avg_rating=None, offset=0, limit=None):
         """Searches movies by optional title, genre and year filters with pagination.
-        
-        Uses FULLTEXT indexing for title-only searches with 4+ characters.
+
+        If all filters are None/empty, returns an empty list (no-op).
+        The method builds a dynamic SQL query while keeping the returned columns
+        consistent with other movie queries.
         """
         # Normalize empty strings to None
         if search_term is not None:
@@ -457,15 +366,18 @@ class MovieRepository:
         if genre is not None:
             genre = genre.strip() if isinstance(genre, str) and genre.strip() != "" else None
         if year is not None:
+            # allow year as string or int
+            # also allow year to be a tuple (min_year, max_year) handled below
             try:
                 if isinstance(year, (list, tuple)):
+                    # leave as-is, repository will process range
                     pass
                 else:
                     year = int(year)
             except Exception:
                 year = None
 
-        # If no filters provided, return empty list
+        # If no filters provided, return empty list to avoid accidental full scans
         if not search_term and not genre and not year and min_avg_rating is None:
             return []
 
@@ -475,97 +387,89 @@ class MovieRepository:
 
         cursor = connection.cursor(dictionary=True)
         try:
-            # OPTIMIZATION: Use FULLTEXT for title-only searches with 4+ characters
-            use_fulltext = (search_term and len(search_term) >= 4 and 
-                          not genre and not year and min_avg_rating is None)
-            
-            if use_fulltext:
-                # Use optimized FULLTEXT search for title-only queries
-                print(f"DEBUG: Using FULLTEXT optimization for title: '{search_term}'")
-                cursor.execute(SEARCH_MOVIES_BY_TITLE_FULLTEXT, (search_term, search_term))
-                all_results = cursor.fetchall()
-                
-                # Apply offset and limit in Python (FULLTEXT query has LIMIT 50)
-                limit = limit if limit else 20
-                start = offset
-                end = offset + limit
-                movies = all_results[start:end]
-                
-                print(f"DEBUG: FULLTEXT found {len(all_results)} total, returning {len(movies)} for page")
-                return movies
-            else:
-                # Build dynamic query for multi-filter searches or short terms
-                query = (
-                    "SELECT DISTINCT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, "
-                    "m.runtime, m.totalRatings, m.countRatings FROM Movies m"
-                )
-                params = []
-                
-                # Add joins if genre filter is used
-                if genre:
-                    query += " JOIN Movie_Genre mg ON m.tmdbID = mg.tmdbID JOIN Genre g ON mg.genreID = g.genreID"
+            # Base select
+            query = (
+                "SELECT DISTINCT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, "
+                "m.runtime, m.totalRatings, m.countRatings FROM Movies m"
+            )
+            print("DEBUG: Starting query construction...")
+            params = []
+            # Add joins if genre filter is used
+            if genre:
+                query += " JOIN Movie_Genre mg ON m.tmdbID = mg.tmdbID JOIN Genre g ON mg.genreID = g.genreID"
 
-                where_clauses = []
-                
-                # Use LIKE for title in multi-filter scenarios or short terms
-                if search_term:
-                    where_clauses.append("m.title LIKE %s")
-                    params.append(f"%{search_term}%")
-                    
-                if genre:
-                    where_clauses.append("g.genreName = %s")
-                    params.append(genre)
-                    
-                # Year filter handling
-                if isinstance(year, (list, tuple)) and len(year) == 2:
-                    min_year, max_year = year
-                    try:
-                        min_year = int(min_year) if min_year is not None else None
-                        max_year = int(max_year) if max_year is not None else None
-                        
-                        if min_year is not None and max_year is not None:
-                            where_clauses.append("YEAR(m.releaseDate) BETWEEN %s AND %s")
-                            params.extend([min_year, max_year])
-                    except (TypeError, ValueError) as e:
-                        print(f"DEBUG: Error converting year values: {e}")
-                elif year:
-                    try:
-                        year_int = int(year)
-                        where_clauses.append("YEAR(m.releaseDate) = %s")
-                        params.append(year_int)
-                    except Exception:
-                        pass
-
-                # Minimum average rating filter
-                if min_avg_rating is not None:
-                    try:
-                        min_avg = float(min_avg_rating)
-                        where_clauses.append("(CASE WHEN m.countRatings > 0 THEN m.totalRatings / m.countRatings ELSE 0 END) >= %s")
-                        params.append(min_avg)
-                    except Exception:
-                        pass
-
-                if where_clauses:
-                    query += " WHERE " + " AND ".join(where_clauses)
-
-                query += " ORDER BY m.releaseDate DESC, m.tmdbID DESC"
-
-                # Ensure offset and limit are valid
+            where_clauses = []
+            if search_term:
+                where_clauses.append("m.title LIKE %s")
+                params.append(f"%{search_term}%")
+            if genre:
+                where_clauses.append("g.genreName = %s")
+                params.append(genre)
+            # Year filter: support single year, tuple/list ranges, or None
+            if isinstance(year, (list, tuple)) and len(year) == 2:
+                min_year, max_year = year
                 try:
-                    offset = max(0, int(offset)) if offset is not None else 0
-                    limit = max(1, int(limit)) if limit is not None else 20
-                except (TypeError, ValueError):
-                    offset = 0
-                    limit = 20
+                    min_year = int(min_year) if min_year is not None else None
+                    max_year = int(max_year) if max_year is not None else None
+                    
+                    if min_year is not None and max_year is not None:
+                        where_clauses.append("YEAR(m.releaseDate) BETWEEN %s AND %s")
+                        params.extend([min_year, max_year])
+                        print(f"DEBUG: Added year range condition: {min_year}-{max_year}")
+                except (TypeError, ValueError) as e:
+                    print(f"DEBUG: Error converting year values: {e}")
+                    year = None  # Reset year filter on error
+            elif year:
+                try:
+                    year_int = int(year)
+                    where_clauses.append("YEAR(m.releaseDate) = %s")
+                    params.append(year_int)
+                except Exception:
+                    pass
 
-                # Add LIMIT and OFFSET
-                query += " LIMIT %s OFFSET %s"
-                params.extend([limit, offset])
-                
+            # Minimum average rating filter (uses stored totalRatings/countRatings)
+            if min_avg_rating is not None:
+                try:
+                    min_avg = float(min_avg_rating)
+                    # Use CASE to avoid division by zero
+                    where_clauses.append("(CASE WHEN m.countRatings > 0 THEN m.totalRatings / m.countRatings ELSE 0 END) >= %s")
+                    params.append(min_avg)
+                except Exception:
+                    pass
+
+            if where_clauses:
+                query += " WHERE " + " AND ".join(where_clauses)
+                print(f"DEBUG: WHERE clause: {' AND '.join(where_clauses)}")
+                print(f"DEBUG: Parameters: {params}")
+
+            query += " ORDER BY m.releaseDate DESC, m.tmdbID DESC"
+            
+            # Ensure offset and limit are non-negative integers
+            try:
+                offset = max(0, int(offset)) if offset is not None else 0
+                limit = max(1, int(limit)) if limit is not None else 20
+            except (TypeError, ValueError):
+                offset = 0
+                limit = 20
+
+            # Add LIMIT and OFFSET
+            query += " LIMIT %s OFFSET %s"
+            params.extend([limit, offset])
+            
+            print(f"DEBUG: Final SQL Query: {query}")
+            print(f"DEBUG: Query parameters: {params}")
+            
+            query += ";"
+            try:
+                print("DEBUG: Executing query:", query)
+                print("DEBUG: With parameters:", tuple(params))
                 cursor.execute(query, tuple(params))
                 movies = cursor.fetchall()
+                print(f"DEBUG: Found {len(movies)} movies matching criteria")
                 return movies
-            
+            except Exception as e:
+                print(f"DEBUG: SQL Error: {str(e)}")
+                raise
         except Exception as e:
             print(f"Error searching movies with filters: {e}")
             return []
