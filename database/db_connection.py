@@ -1,36 +1,63 @@
 import mysql.connector
-from mysql.connector import Error
-import os
+from mysql.connector import pooling, Error
 
+# Global connection pool
+_mysql_pool = None
+
+def initialize_mysql_pool(pool_name='myapp_pool', pool_size=10):
+    """
+    Initializes MySQL connection pool (call once at app startup)
+    """
+    global _mysql_pool
+    try:
+        _mysql_pool = pooling.MySQLConnectionPool(
+            pool_name=pool_name,
+            pool_size=pool_size,
+            pool_reset_session=True,
+            host='100.124.52.6',
+            database='INF2003_DBS_P1_20',
+            user='p1_20_db_user',
+            password='p1_20',
+            port=3306
+        )
+        print(f"MySQL connection pool created with {pool_size} connections")
+        return True
+    except Error as e:
+        print(f"Error creating connection pool: {e}")
+        return False
 
 def get_mysql_connection():
     """
-    Creates and returns a MySQL database connection
+    Gets a connection from the pool
     """
+    global _mysql_pool
+    if _mysql_pool is None:
+        initialize_mysql_pool()
+    
     try:
-        connection = mysql.connector.connect(
-            host='100.124.52.6',           # Your MySQL host
-            database='INF2003_DBS_P1_20',  # Your database name
-            user='p1_20_db_user',          # Your username
-            password='p1_20',              # Your password
-            port=3306
-        )
-        
+        connection = _mysql_pool.get_connection()
         if connection.is_connected():
-            print("Successfully connected to MySQL database")
             return connection
-            
     except Error as e:
-        print(f"Error while connecting to MySQL: {e}")
+        print(f"Error getting connection from pool: {e}")
         return None
 
 def close_connection(connection):
     """
-    Closes the MySQL database connection
+    Returns connection to pool (not actually closing)
     """
     if connection and connection.is_connected():
-        connection.close()
-        print("MySQL connection closed")
+        connection.close()  # Returns to pool automatically
+
+def shutdown_pool():
+    """
+    Closes all connections in pool (call on app shutdown)
+    """
+    global _mysql_pool
+    if _mysql_pool:
+        # Pool will auto-close connections when garbage collected
+        _mysql_pool = None
+        print("MySQL connection pool shutdown")
 
 def test_connection():
     """

@@ -2,21 +2,29 @@
 
 import sys
 from PyQt5.QtWidgets import QApplication
-from gui.gui_home import HomeWindow # Import the home window as the main starting point
-# from gui.gui_login import LoginWindow # We might import this conditionally now
+from gui.gui_home import HomeWindow
+from database.db_connection import initialize_mysql_pool, shutdown_pool
+from database.db_mongo_connection import initialize_mongo_connection, close_mongo_connection
 
 def main():
-    # Create the main application object
+    # Initialize connection pools before creating GUI
+    print("Initializing database connections...")
+    initialize_mysql_pool(pool_size=10)
+    initialize_mongo_connection()
+    
     app = QApplication(sys.argv)
-
-    # Create and show the initial window (Home Window)
-    # The HomeWindow will handle checking session state and showing login button if needed
+    
     home_window = HomeWindow()
     home_window.show()
-
-    # Start the application's event loop
-    # This function call blocks until the application is closed.
-    sys.exit(app.exec_())
+    
+    # Cleanup on exit
+    exit_code = app.exec_()
+    
+    print("Shutting down database connections...")
+    shutdown_pool()
+    close_mongo_connection()
+    
+    sys.exit(exit_code)
 
 if __name__ == '__main__':
     main()
