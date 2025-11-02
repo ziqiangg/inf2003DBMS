@@ -101,6 +101,16 @@ class UserService:
             email (str): User's email address
             
         Returns:
-            dict: User data if found, None otherwise
+            dict: Response with success status and user data
         """
-        return self.user_repo.get_user_by_email(email)
+        user = self.user_repo.get_user_by_email(email)
+        if user:
+            return {
+                "success": True,
+                "user": user
+            }
+        else:
+            return {
+                "success": False,
+                "message": "User not found"
+            }

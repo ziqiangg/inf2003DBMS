@@ -214,15 +214,15 @@ class MovieDetailWindow(QWidget):
 
 
     def load_movie_details(self):
-        # print(f"DEBUG: MovieDetailWindow.load_movie_details() called for tmdb_id: {self.tmdb_id}")
+        """Loads and displays the movie details."""
         # Fetch main movie info
-        movie_detail = self.movie_service.get_movie_detail(self.tmdb_id)
-        if not movie_detail:
-            # print(f"DEBUG: MovieDetailWindow.load_movie_details(): Movie detail not found for ID {self.tmdb_id}. Showing error and closing.")
+        movie_result = self.movie_service.get_movie_detail(self.tmdb_id)
+        if not movie_result.get('success') or not movie_result.get('movie'):
             QMessageBox.critical(self, 'Error', f'Could not load details for movie ID {self.tmdb_id}.')
-            self.close() # Close the window if movie not found
+            self.close()
             return
 
+        movie_detail = movie_result['movie']
         print(f"DEBUG: MovieDetailWindow.load_movie_details(): Retrieved movie detail: {movie_detail.get('title')}")
 
         # --- Populate Movie Info ---
@@ -275,49 +275,50 @@ class MovieDetailWindow(QWidget):
         self.overview_text.setPlainText(movie_detail.get('overview', 'No overview available.'))
 
         # --- Fetch and Populate Genres, Cast, Crew ---
-        # print("DEBUG: MovieDetailWindow.load_movie_details(): Fetching genres...")
-        genres = self.genre_service.get_genres_for_movie(self.tmdb_id)
-        # print(f"DEBUG: MovieDetailWindow.load_movie_details(): Retrieved {len(genres)} genres.")
-        genre_names = [g['genreName'] for g in genres]
-        self.genres_text.setPlainText(", ".join(genre_names) if genre_names else "No genres listed.")
+        genre_result = self.genre_service.get_genres_for_movie(self.tmdb_id)
+        if genre_result.get('success'):
+            genres = genre_result.get('genres', [])
+            genre_names = [g['genreName'] for g in genres]
+            self.genres_text.setPlainText(", ".join(genre_names) if genre_names else "No genres listed.")
+        else:
+            self.genres_text.setPlainText("No genres listed.")
 
-        # print("DEBUG: MovieDetailWindow.load_movie_details(): Fetching director...")
-        director_info = self.cast_crew_service.get_director_for_movie(self.tmdb_id)
-        # print(f"DEBUG: MovieDetailWindow.load_movie_details(): Retrieved director info: {director_info}")
-        self.director_text.setText(director_info['name'] if director_info else "Director information not available.")
+        # Fetch director
+        director_result = self.cast_crew_service.get_director_for_movie(self.tmdb_id)
+        if director_result.get('success'):
+            director_info = director_result.get('director')
+            self.director_text.setText(director_info['name'] if director_info else "Director information not available.")
+        else:
+            self.director_text.setText("Director information not available.")
 
-        # print("DEBUG: MovieDetailWindow.load_movie_details(): Fetching cast...")
-        cast_list = self.cast_crew_service.get_formatted_cast_list(self.tmdb_id)
-        # print(f"DEBUG: MovieDetailWindow.load_movie_details(): Retrieved {len(cast_list)} cast members.")
-        self.cast_text.setPlainText(", ".join(cast_list) if cast_list else "Cast information not available.")
+        # Fetch cast
+        cast_result = self.cast_crew_service.get_formatted_cast_list(self.tmdb_id)
+        if cast_result.get('success'):
+            cast_list = cast_result.get('cast_list', [])
+            self.cast_text.setPlainText(", ".join(cast_list) if cast_list else "Cast information not available.")
+        else:
+            self.cast_text.setPlainText("Cast information not available.")
 
         # --- Fetch and Populate Reviews ---
-        # print("DEBUG: MovieDetailWindow.load_movie_details(): Loading reviews...")
         self.load_reviews()
-        # print("DEBUG: MovieDetailWindow.load_movie_details(): Finished loading reviews.")
 
         # --- Check for Existing User Rating/Review (if logged in) ---
-        # print("DEBUG: MovieDetailWindow.load_movie_details(): Checking for existing user rating/review...")
         if self.session_manager.is_logged_in():
             user_id = self.session_manager.get_current_user_id()
-            # print(f"DEBUG: MovieDetailWindow.load_movie_details(): User is logged in (ID: {user_id}). Fetching existing rating/review.")
-            existing_rating = self.rating_service.get_user_rating_for_movie(user_id, self.tmdb_id)
-            existing_review = self.review_service.get_user_review_for_movie(user_id, self.tmdb_id)
-
-            if existing_rating:
+            
+            rating_result = self.rating_service.get_user_rating_for_movie(user_id, self.tmdb_id)
+            if rating_result.get('success') and rating_result.get('rating'):
+                existing_rating = rating_result['rating']
                 rating_val = float(existing_rating['rating'])
-                # print(f"DEBUG: MovieDetailWindow.load_movie_details(): Found existing rating: {rating_val}")
-                # Find the corresponding button and click it to select it
                 for btn in self.rating_buttons:
                     if btn.text() == f"{rating_val:.1f}":
                         btn.setChecked(True)
-                        # Manually call the handler to set the initial state correctly
-                        self.select_rating(rating_val, True) # Pass True as checked
-                        break # Exit loop after finding and clicking the button
+                        self.select_rating(rating_val, True)
+                        break
 
-
-            if existing_review:
-                # print(f"DEBUG: MovieDetailWindow.load_movie_details(): Found existing review: {existing_review['review'][:50]}...") # Print first 50 chars
+            review_result = self.review_service.get_user_review_for_movie(user_id, self.tmdb_id)
+            if review_result.get('success') and review_result.get('review'):
+                existing_review = review_result['review']
                 self.review_text_input.setPlainText(existing_review['review']) # Pre-fill the review text
         #else:
             #print("DEBUG: MovieDetailWindow.load_movie_details(): User is not logged in, skipping rating/review check.")
@@ -332,9 +333,13 @@ class MovieDetailWindow(QWidget):
             if child.widget():
                 child.widget().deleteLater()
 
-        reviews = self.review_service.get_reviews_for_movie(self.tmdb_id)
-        # print(f"DEBUG: MovieDetailWindow.load_reviews(): Retrieved {len(reviews)} reviews from service.")
+        review_result = self.review_service.get_reviews_for_movie(self.tmdb_id)
+        if not review_result.get('success'):
+            no_reviews_label = QLabel("No reviews yet.")
+            self.reviews_container.addWidget(no_reviews_label)
+            return
 
+        reviews = review_result.get('reviews', [])
         if not reviews:
             no_reviews_label = QLabel("No reviews yet.")
             self.reviews_container.addWidget(no_reviews_label)

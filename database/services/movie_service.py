@@ -8,12 +8,12 @@ class MovieService:
         
     def create_movie(self, movie_data):
         """Creates a new movie with associated genres.
-        
+    
         Args:
             movie_data (dict): Dictionary containing movie information
-            
+        
         Returns:
-            dict: Result of the operation
+            dict: Result of the operation with success status and movie_id
         """
         # Validate required fields
         required_fields = ["title", "runtime", "releaseDate", "genres"]
@@ -23,22 +23,34 @@ class MovieService:
                     "success": False,
                     "message": f"Missing required field: {field}"
                 }
-        
+    
         # Additional validation
         if movie_data["runtime"] < 0:
             return {
                 "success": False,
                 "message": "Runtime cannot be negative"
             }
-            
+        
         if not isinstance(movie_data["genres"], list) or len(movie_data["genres"]) == 0:
             return {
                 "success": False,
                 "message": "At least one genre must be specified"
             }
-            
-        # Create the movie
-        return self.movie_repo.create_movie(movie_data)
+        
+        # Create the movie - repository returns tmdb_id or None
+        tmdb_id = self.movie_repo.create_movie(movie_data)
+    
+        if tmdb_id:
+            return {
+                "success": True,
+                "message": "Movie created successfully",
+                "movie_id": tmdb_id  # Return the new tmdb_id
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Failed to create movie in database"
+            }
 
     def get_movies_for_homepage(self, page_number=1, movies_per_page=20, max_pages=10):
         """
@@ -83,8 +95,18 @@ class MovieService:
 
     def get_movie_detail(self, tmdb_id):
         """Retrieves details for a specific movie."""
-        return self.movie_repo.get_movie_by_id(tmdb_id)
-    
+        movie = self.movie_repo.get_movie_by_id(tmdb_id)
+        if movie:
+            return {
+                "success": True,
+                "movie": movie
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Movie not found"
+            }
+
     def search_movies_by_title(self, search_term=None, genre=None, year=None, min_avg_rating=None, page_number=1, movies_per_page=20, max_pages=10):
         """Searches for movies by title with pagination, optionally filtering by genre, year and/or minimum average rating.
 
@@ -152,99 +174,143 @@ class MovieService:
             "has_prev": page_number > 1
         }
 
+    def get_movie_stats(self, tmdb_id):
+        """Gets statistics about a movie's ratings and reviews.
+
+        Args:
+            tmdb_id (int): The tmdbID of the movie
+    
+        Returns:
+            dict: Dictionary containing success status and stats
+        """
+        stats = self.movie_repo.get_movie_stats(tmdb_id)
+        return {
+            "success": True,
+            "rating_count": stats.get('rating_count', 0),
+            "review_count": stats.get('review_count', 0)
+        }
+
     def get_available_years(self):
         """Returns list of available release years from the repository."""
-        return self.movie_repo.get_available_years()
+        years = self.movie_repo.get_available_years()
+        return {
+            "success": True,
+            "years": years
+        }
 
     def update_movie(self, movie_data):
         """Updates an existing movie with associated genres.
-        
+    
         Args:
             movie_data (dict): Dictionary containing movie information including tmdbID
-            
+        
         Returns:
-            dict: Result of the operation
+            dict: Result of the operation with success status
         """
         # Validate required fields
-        required_fields = ["tmdbID", "title", "runtime", "releaseDate", "genres"]
+        if "tmdbID" not in movie_data:
+            return {
+                "success": False,
+                "message": "Missing tmdbID for update operation"
+            }
+    
+        required_fields = ["title", "runtime", "releaseDate", "genres"]
         for field in required_fields:
-            if field not in movie_data or not movie_data[field]:
+            if field not in movie_data or movie_data[field] is None:
                 return {
                     "success": False,
                     "message": f"Missing required field: {field}"
                 }
-        
+    
         # Additional validation
         if movie_data["runtime"] < 0:
             return {
                 "success": False,
                 "message": "Runtime cannot be negative"
             }
-            
+        
         if not isinstance(movie_data["genres"], list) or len(movie_data["genres"]) == 0:
             return {
                 "success": False,
                 "message": "At least one genre must be specified"
             }
-            
-        # Update the movie
-        return self.movie_repo.update_movie(movie_data)
+    
+        # Update the movie - repository returns True/False
+        success = self.movie_repo.update_movie(movie_data)
+    
+        if success:
+            return {
+                "success": True,
+                "message": "Movie updated successfully",
+                "movie_id": movie_data["tmdbID"]
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Failed to update movie in database"
+            }
 
     def delete_movie(self, tmdb_id):
-        """Deletes a movie by its tmdbID.
+        """Deletes a movie and all associated data.
         
         Args:
-            tmdb_id (int): The tmdbID of the movie to delete
+            tmdb_id (int): The tmdb_id of the movie to delete
             
         Returns:
-            dict: Result of the operation
+            dict: Result of the operation with success status
         """
-        try:
-            self.movie_repo.delete_movie(tmdb_id)
+        if not tmdb_id:
+            return {
+                "success": False,
+                "message": "Invalid tmdbID"
+            }
+        
+        # Delete the movie - repository returns True/False
+        success = self.movie_repo.delete_movie(tmdb_id)
+        
+        if success:
             return {
                 "success": True,
                 "message": "Movie deleted successfully"
             }
-        except Exception as e:
+        else:
             return {
                 "success": False,
-                "message": f"Failed to delete movie: {str(e)}"
+                "message": "Failed to delete movie. Movie may not exist or database error occurred."
             }
-
-    def get_movie_stats(self, tmdb_id):
-        """Gets statistics about a movie's ratings and reviews.
-    
-        Args:
-            tmdb_id (int): The tmdbID of the movie
-        
-        Returns:
-            dict: Dictionary containing rating_count and review_count
-        """
-        return self.movie_repo.get_movie_stats(tmdb_id)
 
     def update_movie_aggregates(self, tmdb_id, total_ratings, count_ratings):
-        """Updates the aggregated rating statistics for a movie.
+        """Updates the aggregated rating information for a movie.
+    
+        Note: This method is now deprecated as rating operations handle 
+    aggregates atomically within transactions. Kept for backwards compatibility.
     
         Args:
-            tmdb_id (int): The movie's tmdbID
+            tmdb_id (int): The tmdb_id of the movie
             total_ratings (float): Sum of all ratings
-            count_ratings (int): Number of ratings
+            count_ratings (int): Count of ratings
         
         Returns:
-            dict: Success status and message
+            dict: Result of the operation with success status
         """
-        success = self.movie_repo.update_movie_aggregates(tmdb_id, total_ratings, count_ratings)
-    
-        if not success:
+        if total_ratings < 0 or count_ratings < 0:
             return {
-                "success": False, 
-                "message": "Failed to update movie rating aggregates."
+                "success": False,
+                "message": "Rating values cannot be negative"
             }
     
-        return {
-            "success": True, 
-            "message": "Movie rating aggregates updated successfully."
-        }
+        success = self.movie_repo.update_movie_aggregates(tmdb_id, total_ratings, count_ratings)
+    
+        if success:
+            return {
+                "success": True,
+                "message": "Movie aggregates updated successfully"
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Failed to update movie aggregates"
+            }
 
 
 # Example usage (optional, for testing):

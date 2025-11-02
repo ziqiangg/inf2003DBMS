@@ -375,5 +375,14 @@ UPDATE_MOVIE_AGGREGATES = """
 UPDATE Movies SET totalRatings = %s, countRatings = %s WHERE tmdbID = %s;
 """
 
+# Atomic aggregate update (used within transactions)
+UPDATE_MOVIE_AGGREGATES_ATOMIC = """
+UPDATE Movies m
+SET 
+    totalRatings = (SELECT COALESCE(SUM(rating), 0) FROM Ratings WHERE tmdbID = %s),
+    countRatings = (SELECT COUNT(*) FROM Ratings WHERE tmdbID = %s)
+WHERE tmdbID = %s;
+"""
+
 # Example: Query to get all cast and crew for a specific movie from MongoDB (this will be handled differently)
 # GET_MOVIE_CAST_CREW = "..." # This will likely be a MongoDB query handled in db_mongo_pre_function.py or a dedicated service

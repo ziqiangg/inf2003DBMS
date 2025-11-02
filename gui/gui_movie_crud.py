@@ -66,10 +66,12 @@ class MovieForm(QWidget):
 
         self.genre_combo = QComboBox()
         # Load genres into combo box
-        genres = self.genre_service.get_all_genres()
-        for genre in genres:
-            self.genre_combo.addItem(genre['genreName'])
-
+        genre_result = self.genre_service.get_all_genres()
+        if genre_result.get('success'):
+            genres = genre_result.get('genres', [])
+            for genre in genres:
+                self.genre_combo.addItem(genre['genreName'])
+        
         add_genre_btn = QPushButton("Add Genre")
         add_genre_btn.clicked.connect(self.add_genre_to_list)
         
@@ -402,26 +404,29 @@ class MovieForm(QWidget):
 
         # Load genres
         self.genre_list.clear()
-        genres = self.genre_service.get_genres_for_movie(movie_data['tmdbID'])
-        for genre in genres:
-            self.create_genre_item(genre['genreName'])
+        genre_result = self.genre_service.get_genres_for_movie(movie_data['tmdbID'])
+        if genre_result.get('success'):
+            genres = genre_result.get('genres', [])
+            for genre in genres:
+                self.create_genre_item(genre['genreName'])
 
-        # : Load Cast and Crew data into the display lists (Removed ID from display)
-        # This requires fetching from the CastCrewService using the tmdbID
+        # Load Cast and Crew data
         if movie_data.get('tmdbID'):
             tmdb_id = movie_data['tmdbID']
-            cast_data = self.cast_crew_service.get_cast_for_movie(tmdb_id)
-            crew_data = self.cast_crew_service.get_crew_for_movie(tmdb_id)
+            
+            cast_result = self.cast_crew_service.get_cast_for_movie(tmdb_id)
+            if cast_result.get('success'):
+                cast_data = cast_result.get('cast', [])
+                self.cast_display_list.clear()
+                for person in cast_data:
+                    self.create_cast_item(person['name'], person['character'])
 
-            self.cast_display_list.clear()
-            for person in cast_data:
-                # : Use create_cast_item to add with remove button
-                self.create_cast_item(person['name'], person['character'])
-
-            self.crew_display_list.clear()
-            for person in crew_data:
-                # : Use create_crew_item to add with remove button
-                self.create_crew_item(person['name'], person['job'], person['department'])
+            crew_result = self.cast_crew_service.get_crew_for_movie(tmdb_id)
+            if crew_result.get('success'):
+                crew_data = crew_result.get('crew', [])
+                self.crew_display_list.clear()
+                for person in crew_data:
+                    self.create_crew_item(person['name'], person['job'], person['department'])
 
     def get_movie_data(self):
         """Get the current form data as a dictionary, including cast/crew lists."""
@@ -509,9 +514,13 @@ class MovieSearchPanel(QWidget):
         genre_layout.addWidget(QLabel("Genre:"))
         self.genre_combo = QComboBox()
         self.genre_combo.addItem("All Genres")
-        genres = self.genre_service.get_all_genres()
-        for genre in genres:
-            self.genre_combo.addItem(genre['genreName'])
+        
+        genre_result = self.genre_service.get_all_genres()
+        if genre_result.get('success'):
+            genres = genre_result.get('genres', [])
+            for genre in genres:
+                self.genre_combo.addItem(genre['genreName'])
+        
         genre_layout.addWidget(self.genre_combo)
         filters_layout.addLayout(genre_layout)
 
@@ -520,9 +529,13 @@ class MovieSearchPanel(QWidget):
         year_layout.addWidget(QLabel("Year:"))
         self.year_combo = QComboBox()
         self.year_combo.addItem("All Years")
-        years = self.movie_service.get_available_years()
-        for year in years:
-            self.year_combo.addItem(str(year))
+        
+        years_result = self.movie_service.get_available_years()
+        if years_result.get('success'):
+            years = years_result.get('years', [])
+            for year in years:
+                self.year_combo.addItem(str(year))
+        
         year_layout.addWidget(self.year_combo)
         filters_layout.addLayout(year_layout)
 
@@ -648,9 +661,9 @@ class MovieCrudWindow(QWidget):
         current_row = table.currentRow()
         if current_row >= 0:
             tmdb_id = int(table.item(current_row, 0).text())
-            movie_data = self.movie_service.get_movie_detail(tmdb_id)
-            if movie_data:
-                self.edit_form.load_movie_data(movie_data)
+            movie_result = self.movie_service.get_movie_detail(tmdb_id)
+            if movie_result.get('success') and movie_result.get('movie'):
+                self.edit_form.load_movie_data(movie_result['movie'])
 
     def create_movie(self):
         """Create a new movie"""
@@ -666,24 +679,23 @@ class MovieCrudWindow(QWidget):
 
         try:
             result = self.movie_service.create_movie(movie_data)
-            print(f"DEBUG: MovieService.create_movie returned result: {result}") # Debug print
+            print(f"DEBUG: MovieService.create_movie returned result: {result}")
             if result["success"]:
-                # After creating the movie (which has tmdbID), save cast/crew data
-                tmdb_id = result.get("movie_id") # DO NOT CHANGE movie_id is correct key, IT IS THE NEW tmdbID 
-                print(f"DEBUG: Retrieved tmdbID from result: {tmdb_id}") # Debug print
+                tmdb_id = result.get("movie_id")
+                print(f"DEBUG: Retrieved tmdbID from result: {tmdb_id}")
                 if tmdb_id:
-                    # Call the helper methods on the create_form instance (assuming MovieForm has CastCrewService)
-                    self.create_form.cast_crew_service = self.cast_crew_service # Ensure form has access if needed
-                    print(f"DEBUG: About to call save_cast_data for tmdbID {tmdb_id}") # Debug print
+                    self.create_form.cast_crew_service = self.cast_crew_service
+                    print(f"DEBUG: About to call save_cast_data for tmdbID {tmdb_id}")
                     self.create_form.save_cast_data(tmdb_id)
-                    print(f"DEBUG: About to call save_crew_data for tmdbID {tmdb_id}") # Debug print
+                    print(f"DEBUG: About to call save_crew_data for tmdbID {tmdb_id}")
                     self.create_form.save_crew_data(tmdb_id)
-                    print(f"DEBUG: Finished calling save_cast_data and save_crew_data for tmdbID {tmdb_id}") # Debug print
+                    print(f"DEBUG: Finished calling save_cast_data and save_crew_data for tmdbID {tmdb_id}")
                 else:
-                    print(f"DEBUG: WARNING: tmdbID was not found in the result: {result}") # Debug print
+                    print(f"DEBUG: WARNING: tmdbID was not found in the result: {result}")
                 QMessageBox.information(self, "Success", "Movie created successfully!")
                 self.create_form.clear_form()
-                # emit a signal to notify other windows
+                
+                # ADDED: emit a signal to notify other windows
                 global_signals.movie_data_updated.emit(tmdb_id)
                 self.close()
             else:
@@ -707,33 +719,40 @@ class MovieCrudWindow(QWidget):
             return
 
         # FIXED: Use service layer instead of repository
-        stats = self.movie_service.get_movie_stats(movie_data["tmdbID"])
-        if stats["rating_count"] > 0 or stats["review_count"] > 0:
-            stats_msg = []
-            if stats["rating_count"] > 0:
-                stats_msg.append(f"{stats['rating_count']} rating(s)")
-            if stats["review_count"] > 0:
-                stats_msg.append(f"{stats['review_count']} review(s)")
-            reply = QMessageBox.question(self, 'Warning',
-                f"This movie has {' and '.join(stats_msg)}. Are you sure you want to update it?\n\n"
-                f"Note: This will not affect existing ratings and reviews.",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply == QMessageBox.No:
-                return
+        stats_result = self.movie_service.get_movie_stats(movie_data["tmdbID"])
+        if stats_result.get('success'):
+            rating_count = stats_result.get('rating_count', 0)
+            review_count = stats_result.get('review_count', 0)
+            
+            if rating_count > 0 or review_count > 0:
+                stats_msg = []
+                if rating_count > 0:
+                    stats_msg.append(f"{rating_count} rating(s)")
+                if review_count > 0:
+                    stats_msg.append(f"{review_count} review(s)")
+                reply = QMessageBox.question(self, 'Warning',
+                    f"This movie has {' and '.join(stats_msg)}. Are you sure you want to update it?\n\n"
+                    f"Note: This will not affect existing ratings and reviews.",
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                if reply == QMessageBox.No:
+                    return
 
         try:
             result = self.movie_service.update_movie(movie_data)
             if result["success"]:
                 # After updating the movie, save/overwrite cast/crew data
                 tmdb_id = movie_data["tmdbID"]
-                # Call the helper methods on the edit_form instance (assuming MovieForm has CastCrewService)
-                self.edit_form.cast_crew_service = self.cast_crew_service # Ensure form has access if needed
+                # Call the helper methods on the edit_form instance
+                self.edit_form.cast_crew_service = self.cast_crew_service
                 self.edit_form.save_cast_data(tmdb_id)
                 self.edit_form.save_crew_data(tmdb_id)
 
                 QMessageBox.information(self, "Success", "Movie updated successfully!")
                 self.search_panel.search_movies()  # Refresh search results
                 self.edit_form.clear_form()
+                
+                # Emit signal to notify other windows
+                global_signals.movie_data_updated.emit(tmdb_id)
             else:
                 QMessageBox.critical(self, "Error", f"Failed to update movie: {result['message']}")
         except Exception as e:
@@ -746,18 +765,23 @@ class MovieCrudWindow(QWidget):
             QMessageBox.warning(self, "Warning", "Please select a movie to delete")
             return
 
-        stats = self.movie_service.get_movie_stats(movie_data["tmdbID"])
+        # FIXED: Use service layer instead of repository
+        stats_result = self.movie_service.get_movie_stats(movie_data["tmdbID"])
         warning_msg = f"Are you sure you want to delete '{movie_data['title']}'?"
 
-        if stats["rating_count"] > 0 or stats["review_count"] > 0:
-            stats_msg = []
-            if stats["rating_count"] > 0:
-                stats_msg.append(f"{stats['rating_count']} rating(s)")
-            if stats["review_count"] > 0:
-                stats_msg.append(f"{stats['review_count']} review(s)")
+        if stats_result.get('success'):
+            rating_count = stats_result.get('rating_count', 0)
+            review_count = stats_result.get('review_count', 0)
+            
+            if rating_count > 0 or review_count > 0:
+                stats_msg = []
+                if rating_count > 0:
+                    stats_msg.append(f"{rating_count} rating(s)")
+                if review_count > 0:
+                    stats_msg.append(f"{review_count} review(s)")
 
-            warning_msg += f"\n\nWARNING: This movie has {' and '.join(stats_msg)}.\n"
-            warning_msg += "All associated ratings and reviews will also be deleted."
+                warning_msg += f"\n\nWARNING: This movie has {' and '.join(stats_msg)}.\n"
+                warning_msg += "All associated ratings and reviews will also be deleted."
 
         reply = QMessageBox.question(self, 'Delete Movie',
             warning_msg,
@@ -766,7 +790,6 @@ class MovieCrudWindow(QWidget):
         if reply == QMessageBox.Yes:
             try:
                 # Delete cast/crew data from MongoDB BEFORE deleting the movie from MySQL
-                # This ensures data consistency even if the main movie deletion fails later.
                 tmdb_id = movie_data["tmdbID"]
                 print(f"DEBUG: Attempting to delete cast/crew for tmdbID {tmdb_id} before deleting movie.")
                 cast_result = self.cast_crew_service.delete_all_cast_for_movie(tmdb_id)
@@ -774,12 +797,8 @@ class MovieCrudWindow(QWidget):
 
                 if not cast_result["success"]:
                     print(f"WARNING: Could not delete cast for movie {tmdb_id}: {cast_result['message']}")
-                    # Decide: Should we continue with movie deletion if cast deletion fails?
-                    # For now, let's log and continue. You might want to stop the process.
                 if not crew_result["success"]:
                     print(f"WARNING: Could not delete crew for movie {tmdb_id}: {crew_result['message']}")
-                    # Decide: Should we continue with movie deletion if crew deletion fails?
-                    # For now, let's log and continue. You might want to stop the process.
 
                 # Now, delete the main movie entry
                 result = self.movie_service.delete_movie(tmdb_id)
@@ -787,9 +806,10 @@ class MovieCrudWindow(QWidget):
                     QMessageBox.information(self, "Success", "Movie deleted successfully!")
                     self.search_panel.search_movies()  # Refresh search results
                     self.edit_form.clear_form()
+                    
+                    # Emit signal to notify other windows
+                    global_signals.movie_data_updated.emit(tmdb_id)
                 else:
                     QMessageBox.critical(self, "Error", f"Failed to delete movie: {result['message']}")
-                    # If the main movie deletion failed, the cast/crew might have been deleted already.
-                    # This could leave orphaned cast/crew entries if the main deletion was expected to cascade in MySQL.
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")

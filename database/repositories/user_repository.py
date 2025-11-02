@@ -69,16 +69,28 @@ class UserRepository:
             close_connection(connection)
 
     def soft_delete_user(self, user_id):
-        """Soft deletes a user by removing email and password."""
+        """Soft deletes a user by removing email and password (with transaction)."""
         connection = get_mysql_connection()
         if not connection:
             return False
+        
         cursor = connection.cursor()
         try:
+            # Start transaction
+            connection.start_transaction()
+            
+            # Soft delete user
             cursor.execute(SOFT_DELETE_USER, (user_id,))
+            
+            # Check if user was found and updated
+            if cursor.rowcount == 0:
+                connection.rollback()
+                return False
+            
+            # Commit the operation
             connection.commit()
-            # Check if any rows were affected to confirm deletion attempt
-            return cursor.rowcount > 0
+            return True
+            
         except Exception as e:
             print(f"Error soft deleting user: {e}")
             connection.rollback()

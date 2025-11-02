@@ -9,87 +9,85 @@ class RatingService:
         self.review_service = ReviewService()  
         self.movie_service = MovieService()    
 
-    def _update_movie_aggregates(self, tmdb_id):
-        """Helper method to recalculate and update movie rating aggregates.
-        
-        Args:
-            tmdb_id (int): The movie's tmdbID
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        # Calculate the NEW sum and count from the Ratings table
-        sum_ratings, count_ratings = self.rating_repo.get_sum_and_count_ratings_for_movie(tmdb_id)
-
-        # Update through the proper service layer
-        result = self.movie_service.update_movie_aggregates(tmdb_id, sum_ratings, count_ratings)
-        
-        if not result["success"]:
-            print(f"Warning: Failed to update aggregates for movie {tmdb_id}")
-            return False
-        
-        return True
-
     def add_rating(self, user_id, tmdb_id, rating_value):
-        """Adds or updates a rating and updates the movie's sum and count."""
+        """Adds or updates a rating (repository now handles atomic updates)."""
+        # Validation
         if rating_value < 0 or rating_value > 5:
             return {"success": False, "message": "Rating must be between 0 and 5."}
-
+        
+        # Repository handles transaction and aggregate update
         success = self.rating_repo.create_rating(user_id, tmdb_id, rating_value)
+        
         if not success:
             return {"success": False, "message": "Failed to add/update rating in the database."}
-
-        # Update movie aggregates through proper service layer
-        if not self._update_movie_aggregates(tmdb_id):
-            # Rating was saved but aggregates failed to update
-            # Consider if this should return failure or just log warning
-            print(f"Warning: Rating saved but failed to update movie {tmdb_id} aggregates")
         
         return {"success": True, "message": "Rating added/updated successfully."}
 
     def update_rating(self, user_id, tmdb_id, new_rating_value):
-        """Updates an existing rating and recalculates the movie's sum and count."""
+        """Updates an existing rating (repository now handles atomic updates)."""
+        # Validation
         if new_rating_value < 0 or new_rating_value > 5:
             return {"success": False, "message": "Rating must be between 0 and 5."}
-
+        
+        # Repository handles transaction and aggregate update
         success = self.rating_repo.update_rating(user_id, tmdb_id, new_rating_value)
+        
         if not success:
-            return {"success": False, "message": "Failed to update rating in the database or rating does not exist."}
-
-        # Update movie aggregates through proper service layer
-        if not self._update_movie_aggregates(tmdb_id):
-            print(f"Warning: Rating updated but failed to update movie {tmdb_id} aggregates")
+            return {"success": False, "message": "Failed to update rating or rating does not exist."}
         
         return {"success": True, "message": "Rating updated successfully."}
     
     def get_user_rating_for_movie(self, user_id, tmdb_id):
         """Retrieves a specific user's rating for a movie."""
-        return self.rating_repo.get_rating_by_user_and_movie(user_id, tmdb_id)
+        rating = self.rating_repo.get_rating_by_user_and_movie(user_id, tmdb_id)
+        return {
+            "success": True,
+            "rating": rating
+        }
 
     def delete_rating(self, user_id, tmdb_id):
-        """Deletes a rating and recalculates the movie's sum and count."""
+        """Deletes a rating (repository now handles atomic updates)."""
+        # Repository handles transaction and aggregate update
         success = self.rating_repo.delete_rating(user_id, tmdb_id)
-        if not success:
-            return {"success": False, "message": "Failed to delete rating in the database or rating does not exist."}
-
-        # Update movie aggregates through proper service layer
-        if not self._update_movie_aggregates(tmdb_id):
-            print(f"Warning: Rating deleted but failed to update movie {tmdb_id} aggregates")
         
-        return {"success": True, "message": "Rating deleted successfully."}
+        if not success:
+            return {"success": False, "message": "Failed to delete rating or rating does not exist."}
+        
+        # Also delete associated review if exists
+        review = self.review_service.get_user_review_for_movie(user_id, tmdb_id)
+        if review:
+            self.review_service.delete_review(user_id, tmdb_id)
+        
+        return {"success": True, "message": "Rating (and review if present) deleted successfully."}
 
     def get_movie_average_and_count(self, tmdb_id):
         """Retrieves the sum of ratings and count for a specific movie."""
-        return self.rating_repo.get_sum_and_count_ratings_for_movie(tmdb_id)
+        sum_ratings, count_ratings = self.rating_repo.get_sum_and_count_ratings_for_movie(tmdb_id)
+        
+        # Wrap the result consistently
+        avg_rating = (sum_ratings / count_ratings) if count_ratings > 0 else 0.0
+        
+        return {
+            "success": True,
+            "sum_ratings": sum_ratings,
+            "count_ratings": count_ratings,
+            "average_rating": avg_rating  # Add computed average for convenience
+        }
 
     def get_movie_average(self, tmdb_id):
         """Calculates and returns the average rating for a specific movie."""
         sum_ratings, count_ratings = self.get_movie_average_and_count(tmdb_id)
         if count_ratings > 0:
-            return sum_ratings / count_ratings
+            avg = sum_ratings / count_ratings
         else:
-            return 0.0
-    
+            avg = 0.0
+        
+        return {
+            "success": True,
+            "average_rating": avg,
+            "count": count_ratings
+        }
+
     def get_user_ratings_and_reviews_for_profile(self, user_id):
         """
         Retrieves all ratings and reviews for a specific user, combined into a single list
@@ -114,4 +112,7 @@ class RatingService:
 
             processed_list.append(processed_item)
 
-        return processed_list
+        return {
+            "success": True,
+            "interactions": processed_list
+        }

@@ -18,111 +18,66 @@ class MovieRepository:
         pass
         
     def create_movie(self, movie_data):
-        """Creates a new movie and associates it with genres.
-        
-        Args:
-            movie_data (dict): Dictionary containing movie information with keys:
-                - title (required)
-                - link (optional)
-                - runtime (required)
-                - poster (optional)
-                - overview (optional)
-                - releaseDate (required)
-                - genres (list, required)
-                
-        Returns:
-            dict: Dictionary containing:
-                - success (bool): Whether the operation was successful
-                - message (str): Success/error message
-                - movie_id (int): ID of the created movie (if successful)
-        """
+        """Creates a new movie with genres in a transaction."""
         connection = get_mysql_connection()
         if not connection:
-            return {"success": False, "message": "Could not connect to database"}
-            
-        cursor = connection.cursor(dictionary=True)
+            return {"success": False, "message": "Database connection failed"}
+        
+        cursor = connection.cursor()
         try:
-            # Start transaction by turning off autocommit
-            connection.autocommit = False
+            # Start transaction
+            connection.start_transaction()
             
-            # Get the next available tmdbID
+            # 1. Get next tmdbID
             cursor.execute(GET_NEXT_TMDB_ID)
-            next_id_result = cursor.fetchone()
-            movie_id = next_id_result['next_id']
-            print(f"DEBUG: Next available tmdbID: {movie_id}")
-
-            # Insert the movie with the predetermined ID
+            result = cursor.fetchone()
+            next_tmdb_id = result[0] if result else 1
+            
+            # 2. Insert movie
             cursor.execute(INSERT_MOVIE, (
-                movie_id,
-                movie_data["title"],
-                movie_data.get("link"),
-                movie_data["runtime"],
-                movie_data.get("poster"),
-                movie_data.get("overview"),
-                movie_data["releaseDate"]
+                next_tmdb_id,
+                movie_data.get('title'),
+                movie_data.get('link'),
+                movie_data.get('runtime'),
+                movie_data.get('poster'),
+                movie_data.get('overview'),
+                movie_data.get('releaseDate')
             ))
-            print(f"DEBUG: Inserted movie with tmdbID: {movie_id}")
             
-            # First, let's debug what genres exist
-            print("DEBUG: Current genres in database:")
-            cursor.execute(LIST_ALL_GENRES)
-            existing_genres = cursor.fetchall()
-            for genre in existing_genres:
-                print(f"  - ID: {genre['genreID']}, Name: {genre['genreName']}")
-
-            # Insert genre relationships
-            for genre_name in movie_data["genres"]:
-                try:
-                    print(f"\nDEBUG: Processing genre: {genre_name}")
-                    
-                    # Check if genre exists
-                    cursor.execute(CHECK_GENRE_EXISTS, (genre_name,))
-                    genre_result = cursor.fetchone()
-                    
-                    if genre_result:
-                        print(f"DEBUG: Genre '{genre_name}' exists with ID: {genre_result['genreID']}")
-                        genre_id = genre_result['genreID']
-                    else:
-                        print(f"DEBUG: Genre '{genre_name}' doesn't exist, creating it")
-                        # Get next available ID
-                        cursor.execute(GET_NEXT_GENRE_ID)
-                        next_id = cursor.fetchone()['next_id']
-                        print(f"DEBUG: Next available genre ID: {next_id}")
-                        
-                        # Insert new genre
-                        cursor.execute(INSERT_GENRE, (next_id, genre_name))
-                        print(f"DEBUG: Inserted new genre with ID: {next_id}")
-                        
-                        genre_id = next_id
-                    
-                    print(f"DEBUG: Attempting to link movie {movie_id} with genre {genre_id}")
-                    # Now insert the movie-genre relationship
-                    cursor.execute(INSERT_MOVIE_GENRE, (movie_id, genre_id))
-                    print(f"DEBUG: Successfully linked movie with genre")
-                    
-                except Exception as e:
-                    print(f"DEBUG: Error handling genre {genre_name}: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    connection.rollback()
-                    return {
-                        "success": False,
-                        "message": f"Failed to associate genre '{genre_name}' with movie"
-                    }
+            # 3. Handle genres
+            genres = movie_data.get('genres', [])
+            for genre_name in genres:
+                # Check if genre exists
+                cursor.execute(CHECK_GENRE_EXISTS, (genre_name,))
+                genre_result = cursor.fetchone()
+                
+                if genre_result:
+                    genre_id = genre_result[0]
+                else:
+                    # Get next genre ID and create new genre
+                    cursor.execute(GET_NEXT_GENRE_ID)
+                    next_genre_id = cursor.fetchone()[0]
+                    cursor.execute(INSERT_GENRE, (next_genre_id, genre_name))
+                    genre_id = next_genre_id
+                
+                # Link movie to genre
+                cursor.execute(INSERT_MOVIE_GENRE, (next_tmdb_id, genre_id))
             
-            # Commit transaction
+            # Commit all operations
             connection.commit()
-            
             return {
                 "success": True,
                 "message": "Movie created successfully",
-                "movie_id": movie_id
+                "movie_id": next_tmdb_id
             }
             
         except Exception as e:
             print(f"Error creating movie: {e}")
             connection.rollback()
-            return {"success": False, "message": str(e)}
+            return {
+                "success": False,
+                "message": f"Database error: {str(e)}"
+            }
         finally:
             cursor.close()
             close_connection(connection)
@@ -603,127 +558,93 @@ class MovieRepository:
             close_connection(connection)
 
     def update_movie(self, movie_data):
-        """Updates an existing movie and its genres.
-        
-        Args:
-            movie_data (dict): Dictionary containing movie information with keys:
-                - tmdbID (required)
-                - title (required)
-                - link (optional)
-                - runtime (required)
-                - poster (optional)
-                - overview (optional)
-                - releaseDate (required)
-                - genres (list, required)
-                
-        Returns:
-            dict: Dictionary containing:
-                - success (bool): Whether the operation was successful
-                - message (str): Success/error message
-        """
+        """Updates an existing movie with transaction."""
         connection = get_mysql_connection()
         if not connection:
-            return {"success": False, "message": "Could not connect to database"}
-            
-        cursor = connection.cursor(dictionary=True)
+            return False
+        
+        cursor = connection.cursor()
         try:
             # Start transaction
-            connection.autocommit = False
+            connection.start_transaction()
             
-            # Update movie details
+            tmdb_id = movie_data.get('tmdbID')
+            
+            # 1. Update movie details
             cursor.execute(UPDATE_MOVIE, (
-                movie_data["title"],
-                movie_data.get("link"),
-                movie_data["runtime"],
-                movie_data.get("poster"),
-                movie_data.get("overview"),
-                movie_data["releaseDate"],
-                movie_data["tmdbID"]
+                movie_data.get('title'),
+                movie_data.get('link'),
+                movie_data.get('runtime'),
+                movie_data.get('poster'),
+                movie_data.get('overview'),
+                movie_data.get('releaseDate'),
+                tmdb_id
             ))
-
-            # Delete existing genre relationships
-            cursor.execute(DELETE_MOVIE_GENRES, (movie_data["tmdbID"],))
-
-            # Insert new genre relationships
-            for genre_name in movie_data["genres"]:
-                try:
-                    # Check if genre exists
-                    cursor.execute(CHECK_GENRE_EXISTS, (genre_name,))
-                    genre_result = cursor.fetchone()
-                    
-                    if genre_result:
-                        genre_id = genre_result['genreID']
-                    else:
-                        # Get next available ID
-                        cursor.execute(GET_NEXT_GENRE_ID)
-                        next_id = cursor.fetchone()['next_id']
-                        
-                        # Insert new genre
-                        cursor.execute(INSERT_GENRE, (next_id, genre_name))
-                        genre_id = next_id
-                    
-                    # Insert the movie-genre relationship
-                    cursor.execute(INSERT_MOVIE_GENRE, (movie_data["tmdbID"], genre_id))
-                    
-                except Exception as e:
-                    connection.rollback()
-                    return {
-                        "success": False,
-                        "message": f"Failed to associate genre '{genre_name}' with movie"
-                    }
             
-            # Commit transaction
+            # 2. Update genres - delete old associations and add new ones
+            cursor.execute(DELETE_MOVIE_GENRES, (tmdb_id,))
+            
+            genres = movie_data.get('genres', [])
+            for genre_name in genres:
+                # Check if genre exists
+                cursor.execute(CHECK_GENRE_EXISTS, (genre_name,))
+                genre_result = cursor.fetchone()
+                
+                if genre_result:
+                    genre_id = genre_result[0]
+                else:
+                    # Create new genre
+                    cursor.execute(GET_NEXT_GENRE_ID)
+                    next_genre_id = cursor.fetchone()[0]
+                    cursor.execute(INSERT_GENRE, (next_genre_id, genre_name))
+                    genre_id = next_genre_id
+                
+                # Link movie to genre
+                cursor.execute(INSERT_MOVIE_GENRE, (tmdb_id, genre_id))
+            
+            # Commit all operations
             connection.commit()
-            
-            return {
-                "success": True,
-                "message": "Movie updated successfully"
-            }
+            return True
             
         except Exception as e:
+            print(f"Error updating movie: {e}")
             connection.rollback()
-            return {"success": False, "message": str(e)}
+            return False
         finally:
             cursor.close()
             close_connection(connection)
 
     def delete_movie(self, tmdb_id):
-        """Deletes a movie and all its related data.
-        
-        Args:
-            tmdb_id (int): The tmdbID of the movie to delete
-                
-        Raises:
-            Exception: If deletion fails
-        """
+        """Deletes a movie and all associated data in a transaction."""
         connection = get_mysql_connection()
         if not connection:
-            raise Exception("Could not connect to database")
-            
-        cursor = connection.cursor(dictionary=True)
+            return False
+        
+        cursor = connection.cursor()
         try:
             # Start transaction
-            connection.autocommit = False
+            connection.start_transaction()
             
-            # Delete all related data first
             # 1. Delete ratings
-            cursor.execute(DELETE_MOVIE_RATINGS, (tmdb_id,))  
+            cursor.execute(DELETE_MOVIE_RATINGS, (tmdb_id,))
             
             # 2. Delete reviews
-            cursor.execute(DELETE_MOVIE_REVIEWS, (tmdb_id,))  
+            cursor.execute(DELETE_MOVIE_REVIEWS, (tmdb_id,))
             
-            # 3. Delete movie-genre relationships
+            # 3. Delete genre associations
             cursor.execute(DELETE_MOVIE_GENRES, (tmdb_id,))
             
-            # Finally, delete the movie itself
+            # 4. Delete the movie
             cursor.execute(DELETE_MOVIE, (tmdb_id,))
             
-            # Commit transaction
+            # Commit all operations
             connection.commit()
+            return True
             
         except Exception as e:
+            print(f"Error deleting movie: {e}")
             connection.rollback()
-            raise e
+            return False
         finally:
             cursor.close()
             close_connection(connection)

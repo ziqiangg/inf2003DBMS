@@ -279,16 +279,18 @@ class ProfileWindow(QWidget):
 
     def remove_user(self):
         """Handles the admin removing a user account with role validation."""
-        # F
-        user_data = self.user_service.get_user_by_email(self.selected_user_email)
+        # FIXED: Handle service layer response format
+        user_result = self.user_service.get_user_by_email(self.selected_user_email)
         
-        if not user_data:
+        if not user_result.get('success') or not user_result.get('user'):
             QMessageBox.warning(
                 self,
                 "User Not Found",
                 "Could not find user information. Please try searching again."
             )
             return
+        
+        user_data = user_result['user']
         
         # Check if the user is an admin
         if user_data.get('role') == 'admin':
@@ -384,14 +386,19 @@ class ProfileWindow(QWidget):
             self.remove_user_button.setEnabled(False)
             self.remove_user_button.setToolTip("Cannot remove your own account")
         else:
-            # FIXED: Use service layer instead of repository
-            user_data = self.user_service.get_user_by_email(self.selected_user_email)
-            if user_data and user_data.get('role') == 'admin':
-                self.remove_user_button.setEnabled(False)
-                self.remove_user_button.setToolTip("Cannot remove administrator accounts")
+            # FIXED: Handle service layer response format
+            user_result = self.user_service.get_user_by_email(self.selected_user_email)
+            if user_result.get('success') and user_result.get('user'):
+                user_data = user_result['user']
+                if user_data.get('role') == 'admin':
+                    self.remove_user_button.setEnabled(False)
+                    self.remove_user_button.setToolTip("Cannot remove administrator accounts")
+                else:
+                    self.remove_user_button.setEnabled(True)
+                    self.remove_user_button.setToolTip("Remove this user account")
             else:
-                self.remove_user_button.setEnabled(True)
-                self.remove_user_button.setToolTip("Remove this user account")
+                self.remove_user_button.setEnabled(False)
+                self.remove_user_button.setToolTip("User not found")
 
     def setup_user_ui(self, main_layout):
         """Sets up the UI elements specific to the standard user profile view."""
@@ -414,10 +421,11 @@ class ProfileWindow(QWidget):
             QMessageBox.warning(self, 'Search Error', 'Please enter an email address to search.')
             return
 
-        # FIXED: Use service layer instead of repository
-        searched_user_data = self.user_service.get_user_by_email(email_to_search)
+        # FIXED: Handle service layer response format
+        user_result = self.user_service.get_user_by_email(email_to_search)
 
-        if searched_user_data:
+        if user_result.get('success') and user_result.get('user'):
+            searched_user_data = user_result['user']
             self.selected_user_id = searched_user_data['userID']
             self.selected_user_email = searched_user_data['email']
             self.selected_user_email_label.setText(self.selected_user_email)
@@ -436,34 +444,30 @@ class ProfileWindow(QWidget):
         print(f"DEBUG: ProfileWindow.load_profile_data: Loading data for userID {self.selected_user_id}")
 
         # Get the raw data from the service (includes ratings and reviews)
-        user_interactions = self.rating_service.get_user_ratings_and_reviews_for_profile(self.selected_user_id)
+        interactions_result = self.rating_service.get_user_ratings_and_reviews_for_profile(self.selected_user_id)
+        
+        if not interactions_result.get('success'):
+            print(f"DEBUG: ProfileWindow.load_profile_data: Failed to retrieve interactions.")
+            return
+        
+        user_interactions = interactions_result.get('interactions', [])
         print(f"DEBUG: ProfileWindow.load_profile_data: Retrieved {len(user_interactions)} interactions (ratings/reviews) via service.")
 
-        # --- GUI LOGIC CHANGE: Separate, Sort, and Combine ---
-        # 1. Separate interactions based on presence of rating
-        rated_movies = [] # For movies with a rating (may or may not have a review)
-        reviewed_only_movies = [] # For movies with only a review (no rating)
+        # --- GUI LOGIC: Separate, Sort, and Combine ---
+        rated_movies = []
+        reviewed_only_movies = []
 
         for item in user_interactions:
             if item['rating'] is not None:
                 rated_movies.append(item)
-            else: # item['rating'] is None
+            else:
                 reviewed_only_movies.append(item)
 
-        # 2. Sort each list according to the rules
-        # Sort rated movies by rating value (descending)
+        # Sort lists
         rated_movies.sort(key=lambda x: x['rating'], reverse=True)
-        # Sort reviewed-only movies by review_timeStamp (descending)
-        # Note: The unified query sets review_timeStamp correctly for review-only entries.
-        # We need to ensure the processed list from the service correctly maps the timestamp.
-        # Assuming the service logic correctly assigns 'timeStamp' based on review_timeStamp for review-only entries.
-        # If the service sets 'timeStamp' correctly, use it:
         reviewed_only_movies.sort(key=lambda x: x.get('timeStamp'), reverse=True)
-        # If the service doesn't set 'timeStamp' correctly for review-only, you might need to rely on
-        # the original repository query's 'review_timeStamp' field if accessible here,
-        # or ensure the service correctly populates 'timeStamp' when rating is None.
 
-        # 3. Combine the two lists: rated first, then reviewed-only
+        # Combine the two lists
         sorted_interactions = rated_movies + reviewed_only_movies
 
         print(f"DEBUG: ProfileWindow.load_profile_data: After separating/sorting, {len(rated_movies)} rated and {len(reviewed_only_movies)} review-only movies.")

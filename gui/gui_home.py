@@ -210,14 +210,16 @@ class HomeWindow(QWidget):
         self.genre_combo = QComboBox()
         self.genre_combo.addItem("All Genre")
         try:
-            genres = self.genre_service.get_all_genres()
-            for g in genres:
-                # genre service returns dict rows with 'genreName'
-                name = g.get('genreName') if isinstance(g, dict) else str(g)
-                if name:
-                    self.genre_combo.addItem(name)
+            genre_result = self.genre_service.get_all_genres()
+            if genre_result.get('success'):
+                genres = genre_result.get('genres', [])
+                for g in genres:
+                    name = g.get('genreName')
+                    if name:
+                        self.genre_combo.addItem(name)
         except Exception as e:
             print(f"DEBUG: Failed to load genres for dropdown: {e}")
+    
         # Create Year Selection Button
         self.year_button = QPushButton("Select Year")
         self.year_button.clicked.connect(self.show_year_selector)
@@ -773,9 +775,7 @@ class HomeWindow(QWidget):
         # It's possible this is called multiple times or if the reference was already cleared
         # Check if the sender is the same object as the stored reference before clearing
         # sender() returns the object that emitted the signal
-        sender_obj = self.sender() # Get the object that triggered the signal
-        if sender_obj == self.profile_window_ref:
-            # Only clear the reference if the destroyed object is the one we were tracking
+        if self.sender() == self.profile_window_ref:
             self.profile_window_ref = None
 
     def logout(self):
