@@ -99,6 +99,18 @@ ORDER BY relevance_score DESC, m.releaseDate DESC
 LIMIT 50;
 """
 
+SEARCH_MOVIES_BY_GENRES = """
+SELECT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, m.runtime, m.totalRatings, m.countRatings
+FROM Movies m
+JOIN Movie_Genre mg ON m.tmdbID = mg.tmdbID
+JOIN Genre g ON mg.genreID = g.genreID
+WHERE g.genreName IN ({placeholders})
+GROUP BY m.tmdbID
+HAVING COUNT(DISTINCT g.genreName) = %s
+ORDER BY m.releaseDate DESC, m.tmdbID DESC
+LIMIT %s OFFSET %s
+"""
+
 # Query for FULLTEXT search with BOOLEAN MODE (for advanced search patterns)
 SEARCH_MOVIES_BY_TITLE_FULLTEXT_BOOLEAN = """
 SELECT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, m.runtime, m.totalRatings, m.countRatings,
@@ -112,6 +124,20 @@ LIMIT 50;
 # Get all distinct years present in Movies.releaseDate (for populating year dropdowns)
 GET_DISTINCT_YEARS = """
 SELECT DISTINCT YEAR(releaseDate) as year FROM Movies WHERE releaseDate IS NOT NULL ORDER BY year DESC;
+"""
+
+COUNT_MOVIES_BY_GENRES = """
+SELECT COUNT(*) as total
+FROM (
+    SELECT m.tmdbID
+    FROM Movies m
+    JOIN Movie_Genre mg ON m.tmdbID = mg.tmdbID
+    JOIN Genre g ON mg.genreID = g.genreID
+    WHERE g.genreName IN ({placeholders})
+    {extra_where}
+    GROUP BY m.tmdbID
+    HAVING COUNT(DISTINCT g.genreName) = %s
+) sub
 """
 
 # # Base query for movie search with all filters

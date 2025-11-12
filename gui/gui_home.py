@@ -3,8 +3,35 @@
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
     QGridLayout, QMessageBox, QFrame, QTextEdit, QSizePolicy, QSpacerItem, QLineEdit, QComboBox,
-    QCalendarWidget, QDialog, QRadioButton, QButtonGroup, QSpinBox
+    QCalendarWidget, QDialog, QRadioButton, QButtonGroup, QSpinBox, QGroupBox, QFormLayout, QVBoxLayout,
+    QToolButton, QListWidget, QAbstractItemView
 )
+
+class CollapsiblePanel(QWidget):
+    def __init__(self, title="", parent=None):
+        super().__init__(parent)
+        self.toggle_button = QToolButton(text=title, checkable=True, checked=False)
+        self.toggle_button.setStyleSheet("QToolButton { font-weight: bold; }")
+        self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.toggle_button.setArrowType(Qt.RightArrow)
+
+        self.content_area = QFrame()
+        self.content_area.setVisible(False)
+        self.content_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        self.toggle_button.toggled.connect(self.on_toggled)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.addWidget(self.toggle_button)
+        main_layout.addWidget(self.content_area)
+        main_layout.setContentsMargins(0,0,0,0)
+
+    def on_toggled(self, checked):
+        self.content_area.setVisible(checked)
+        self.toggle_button.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+
+    def setContentLayout(self, layout):
+        self.content_area.setLayout(layout)
 
 class YearSelectorDialog(QDialog):
     def __init__(self, parent=None, available_years=None):
@@ -131,7 +158,7 @@ class HomeWindow(QWidget):
         self.genre_service = GenreService()
         self.current_year_selection = None  # Will store (start_year, end_year) or (single_year, None)
         # Current filter state for searches
-        self.current_genre = None
+        self.current_genres = None
         self.current_year = None
         self.current_rating = None
         # Map active QNetworkReply objects to (label_ref, movie_title) so handlers
@@ -151,18 +178,39 @@ class HomeWindow(QWidget):
         # Connect to global signals
         global_signals.movie_data_updated.connect(self.on_movie_data_updated)
         global_signals.user_logged_out.connect(self.on_user_logged_out)
+
+        self.available_years = []
+        try:
+            years_result = self.movie_service.get_available_years()
+            if years_result.get('success'):
+                self.available_years = years_result.get('years', [])
+        except Exception as e:
+            print(f"DEBUG: Failed to load years from DB: {e}")
         
         self.init_ui()
         self.load_movies_page(self.current_page)
+
+    def handle_genre_selection_change(self):
+        all_genre_item = self.genre_list.item(0)
+        self.genre_list.blockSignals(True)
+        if all_genre_item.isSelected():
+            # Select everything if "All Genre" is selected
+            for i in range(self.genre_list.count()):
+                self.genre_list.item(i).setSelected(False)
+        else:
+            # If user deselects any genre, ensure "All Genre" is also unchecked
+            if any(self.genre_list.item(i).isSelected() for i in range(1, self.genre_list.count())):
+                all_genre_item.setSelected(False)
+        self.genre_list.blockSignals(False)
 
     # Slot to handle the signal
     def on_movie_data_updated(self, tmdb_id):
         """Reloads the current page of movies or search results if the updated movie is visible."""
         print(f"DEBUG: HomeWindow.on_movie_data_updated: Received signal for tmdbID {tmdb_id}.")
         # Check if we are currently showing paginated movies or search results
-        if self.search_mode and (self.current_search_term or self.current_genre or self.current_year):
+        if self.search_mode and (self.current_search_term or self.current_genres or self.current_year):
             # If in search mode, reload the search results
-            print(f"DEBUG: HomeWindow.on_movie_data_updated: Reloading search results for title='{self.current_search_term}', genre='{self.current_genre}', year='{self.current_year}'.")
+            print(f"DEBUG: HomeWindow.on_movie_data_updated: Reloading search results for title='{self.current_search_term}', genre='{self.current_genres}', year='{self.current_year}'.")
             self.load_search_results()
         else:
             # If in pagination mode, reload the current page
@@ -202,13 +250,32 @@ class HomeWindow(QWidget):
 
         main_layout.addLayout(top_bar_layout)
 
-        # --- Search Bar ---
-        search_layout = QHBoxLayout()
+        # --- Search Bar with Collapsible Advanced Filters ---
+        search_layout = QVBoxLayout()
+
+        # Main search bar
+        main_search_row = QHBoxLayout()
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search movies by title...") # Optional: Add placeholder text
-        # Add genre and year dropdowns with descriptive defaults
-        self.genre_combo = QComboBox()
-        self.genre_combo.addItem("All Genre")
+        self.search_input.setPlaceholderText("Search movies by title or keyword...")
+        main_search_row.addWidget(self.search_input)
+        search_button = QPushButton("Search")
+        search_button.clicked.connect(self.perform_search)
+        clear_search_button = QPushButton("Clear")
+        clear_search_button.clicked.connect(self.clear_search)
+        main_search_row.addWidget(search_button)
+        main_search_row.addWidget(clear_search_button)
+        search_layout.addLayout(main_search_row)
+
+        # Build the collapsible advanced filter panel
+        self.advanced_filters_panel = CollapsiblePanel("Advanced Filters")
+
+        # Genre multi-select
+        self.genre_list = QListWidget()
+        self.genre_list.setSelectionMode(QAbstractItemView.MultiSelection)
+        self.genre_list.addItem("All Genre")
+        self.genre_list.item(0).setSelected(True)  # Default to all genres selected
+        self.genre_items = []  # Store references to genre items
+
         try:
             genre_result = self.genre_service.get_all_genres()
             if genre_result.get('success'):
@@ -216,45 +283,46 @@ class HomeWindow(QWidget):
                 for g in genres:
                     name = g.get('genreName')
                     if name:
-                        self.genre_combo.addItem(name)
+                        self.genre_list.addItem(name)
+                        self.genre_items.append(name)
         except Exception as e:
-            print(f"DEBUG: Failed to load genres for dropdown: {e}")
-    
-        # Create Year Selection Button
+            print(f"DEBUG: Failed to load genres for multi-select: {e}")
+
+        self.genre_list.itemSelectionChanged.connect(self.handle_genre_selection_change)
+
+
+        # Year selector
         self.year_button = QPushButton("Select Year")
         self.year_button.clicked.connect(self.show_year_selector)
-        try:
-            years_result = self.movie_service.get_available_years()
-            if years_result.get('success'):
-                self.available_years = years_result.get('years', [])
-            else:
-                self.available_years = []
-        except Exception as e:
-            print(f"DEBUG: Failed to load years from DB: {e}")
-            self.available_years = []
 
-        # Average rating dropdown (minimum average rating)
+        # Min rating dropdown
         self.rating_combo = QComboBox()
         self.rating_combo.addItem("Any Rating")
-        # Options represent minimum average rating threshold
         rating_options = ["0+", "1+", "2+", "3+", "4+", "5"]
         for r in rating_options:
             self.rating_combo.addItem(r)
 
-        search_button = QPushButton("Search")
-        clear_search_button = QPushButton("Clear") # Add a clear button
+        # Cast and Crew (merged crew/director)
+        self.cast_input = QLineEdit()
+        self.crew_input = QLineEdit()
 
-        search_button.clicked.connect(self.perform_search)
-        clear_search_button.clicked.connect(self.clear_search)
+        compact_layout = QGridLayout()
+        compact_layout.setHorizontalSpacing(10)
+        compact_layout.setVerticalSpacing(5)
+        compact_layout.addWidget(QLabel("Genres:"),        0, 0)
+        compact_layout.addWidget(self.genre_list,          0, 1, 1, 3)  # multi-select fills grid row
+        compact_layout.addWidget(QLabel("Year:"),          1, 0)
+        compact_layout.addWidget(self.year_button,         1, 1)
+        compact_layout.addWidget(QLabel("Min Rating:"),    1, 2)
+        compact_layout.addWidget(self.rating_combo,        1, 3)
+        compact_layout.addWidget(QLabel("Cast Name:"),     2, 0)
+        compact_layout.addWidget(self.cast_input,          2, 1)
+        compact_layout.addWidget(QLabel("Crew Name:"),     2, 2)
+        compact_layout.addWidget(self.crew_input,          2, 3)
 
-        search_layout.addWidget(self.search_input)
-        search_layout.addWidget(self.genre_combo)
-        search_layout.addWidget(self.year_button)  # Replace year_combo with year_button
-        search_layout.addWidget(self.rating_combo)
-        search_layout.addWidget(search_button)
-        search_layout.addWidget(clear_search_button) # Add the clear button
+        self.advanced_filters_panel.setContentLayout(compact_layout)
+        search_layout.addWidget(self.advanced_filters_panel)
         main_layout.addLayout(search_layout)
-
         # --- Movie Grid Area ---
         self.scroll_area = QScrollArea()
         self.scroll_widget = QWidget()
@@ -290,37 +358,43 @@ class HomeWindow(QWidget):
     def perform_search(self):
         """Handles the search button click."""
         search_term = self.search_input.text().strip()
-        # Read dropdown selections
-        selected_genre = self.genre_combo.currentText() if hasattr(self, 'genre_combo') else None
-        selected_year = self.year_combo.currentText() if hasattr(self, 'year_combo') else None
-        selected_rating = self.rating_combo.currentText() if hasattr(self, 'rating_combo') else None
-
-        # Normalize default labels to None
-        genre = None if (not selected_genre or selected_genre in ['Genre', 'All Genre']) else selected_genre
-        # Year is now handled by the YearSelector dialog
-        year = self.current_year_selection[0] if self.current_year_selection else None
-        year_end = self.current_year_selection[1] if self.current_year_selection and len(self.current_year_selection) > 1 else None
-
-        # Parse rating selection into a numeric minimum average (None for Any Rating)
+        genres_selected = self.get_selected_genres()
+        year = None
         rating = None
-        if selected_rating and selected_rating != 'Any Rating':
-            try:
-                # '3+' -> 3, '5' -> 5
-                rating = float(selected_rating.replace('+', ''))
-            except Exception:
-                rating = None
+        cast = None
+        crew = None
 
-        # Set current filter state
+        if self.advanced_filters_panel.content_area.isVisible():
+            selected_items = [item.text() for item in self.genre_list.selectedItems()]
+            # If "All Genre" selected OR nothing selected, treat as no filter = all genre
+            if not selected_items or "All Genre" in selected_items:
+                genres_selected = None
+            else:
+                genres_selected = [genre for genre in selected_items if genre != "All Genre"]
+
+            year = self.current_year_selection[0] if self.current_year_selection else None
+            rating = None
+            selected_rating = self.rating_combo.currentText()
+            if selected_rating and selected_rating != 'Any Rating':
+                try:
+                    rating = float(selected_rating.replace('+', ''))
+                except Exception:
+                    rating = None
+
+            cast = self.cast_input.text().strip() or None
+            crew = self.crew_input.text().strip() or None
+
         self.current_search_term = search_term
-        self.current_genre = genre
+        self.current_genres = genres_selected
         self.current_year = year
         self.current_rating = rating
-        # Debug print for selected filters
-        print(f"DEBUG: perform_search filters -> title='{search_term}', genre='{genre}', year='{year}', min_avg_rating='{rating}'")
+        self.current_cast = cast
+        self.current_crew = crew
 
-        # If any filter is present, perform search. Otherwise clear.
-        self.current_page = 1  # Reset to first page for new search
-        if search_term or genre or self.current_year_selection or rating is not None:
+        print(f"DEBUG: perform_search filters -> title='{search_term}', genres='{genres_selected}', year='{year}', min_avg_rating='{rating}', cast='{cast}', crew='{crew}'")
+
+        self.current_page = 1
+        if search_term or genres_selected is not None or self.current_year_selection or rating is not None or cast or crew:
             self.search_mode = True
             self.load_search_results()
         else:
@@ -330,17 +404,29 @@ class HomeWindow(QWidget):
         """Clears the search input, dropdowns, and results, returning to pagination mode."""
         print("DEBUG: Clearing search and filters")
         self.search_input.clear()
-        self.genre_combo.setCurrentText("All Genre")  # Reset genre to default
-        self.year_button.setText("Select Year")    # Reset year button text
-        self.rating_combo.setCurrentText("Any Rating")
-        self.current_search_term = ""
-        self.current_genre = None
+        all_genre_item = self.genre_list.item(0)
+        all_genre_item.setSelected(True)
+        self.genre_list.blockSignals(True)
+        for i in range(1, self.genre_list.count()):
+            self.genre_list.item(i).setSelected(False)   
+        self.genre_list.blockSignals(False)
+        self.year_button.setText("Select Year")
         self.current_year_selection = None
+        self.rating_combo.setCurrentText("Any Rating")
+        self.cast_input.clear()
+        self.crew_input.clear()
+
+        self.current_search_term = ""
+        self.current_genres = None
+        self.current_year = None
         self.current_rating = None
+        self.current_cast = None
+        self.current_crew = None
         self.search_mode = False
-        self.current_page = 1 # Reset to first page for pagination
-        self.load_movies_page(self.current_page) # Reload paginated movies
-        self.update_pagination_visibility() # Show pagination controls again
+        self.current_page = 1
+        self.load_movies_page(self.current_page)
+        self.update_pagination_visibility()
+
 
     def show_year_selector(self):
         """Shows the year selector dialog and updates the button text based on selection."""
@@ -382,7 +468,9 @@ class HomeWindow(QWidget):
         # Get paginated search results
         result = self.movie_service.search_movies_by_title(
             search_term=self.current_search_term,
-            genre=self.current_genre,
+            genres=self.current_genres,
+            cast=self.current_cast,
+            crew=self.current_crew,
             year=year_param,
             min_avg_rating=self.current_rating,
             page_number=self.current_page,
@@ -397,7 +485,7 @@ class HomeWindow(QWidget):
         else:
             year_debug = str(year_param)
             
-        print(f"DEBUG: Found results for title='{self.current_search_term}', genre='{self.current_genre}', "
+        print(f"DEBUG: Found results for title='{self.current_search_term}', genre='{self.current_genres}', "
               f"year='{year_debug}', min_avg_rating='{self.current_rating}', "
               f"page {result['current_page']} of {result['total_pages']}")
 
@@ -427,6 +515,13 @@ class HomeWindow(QWidget):
         self.page_label.setText(f"Page {result['current_page']} of {result['total_pages']}")
         self.prev_button.setEnabled(result['has_prev'])
         self.next_button.setEnabled(result['has_next'])
+
+    def get_selected_genres(self):
+        # Returns None if all genres checked, else a list of selected genres.
+        selected = [item.text() for item in self.genre_list.selectedItems()]
+        if len(selected) == self.genre_list.count():
+            return None  # Means "all genres" (no filter)
+        return [g for g in selected if g != "All Genre"] or None
 
     def load_movies_page(self, page_number):
         """Fetches movies for the given page and updates the UI."""

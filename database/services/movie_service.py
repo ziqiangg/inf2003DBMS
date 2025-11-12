@@ -116,12 +116,12 @@ class MovieService:
                 "message": "Movie not found"
             }
 
-    def search_movies_by_title(self, search_term=None, genre=None, year=None, min_avg_rating=None, page_number=1, movies_per_page=20, max_pages=10):
+    def search_movies_by_title(self, search_term=None, genres=None, cast=None, crew=None, year=None, min_avg_rating=None, page_number=1, movies_per_page=20, max_pages=10):
         """Searches for movies by title with pagination, optionally filtering by genre, year and/or minimum average rating.
 
         Args:
             search_term (str, optional): Movie title to search for.
-            genre (str, optional): Genre to filter by.
+            genres (str, optional): Genre to filter by.
             year (int or tuple, optional): Year or (start_year, end_year) tuple to filter by.
             min_avg_rating (float, optional): Minimum average rating (e.g., 3.0 for 3+).
             page_number (int): Page number to retrieve (default: 1)
@@ -145,36 +145,56 @@ class MovieService:
         # Normalize year parameter for both count and search
         year_param = None
         if isinstance(year, (tuple, list)) and len(year) == 2:
-            # It's a range, pass it through as is
             year_param = year
         elif year is not None:
-            # Single year, ensure it's an integer
             try:
                 year_param = int(year)
             except (TypeError, ValueError):
                 year_param = None
+
+        # Ensure genres is a list or None (all genres)
+        genres_param = genres if genres is None or isinstance(genres, list) else [genres]
+
+
+        allowed_tmdbids = None
+        # Only filter if user actually entered values
+        if cast or crew:
+            from database.services.cast_crew_service import CastCrewService
+            cast_crew_service = CastCrewService()
+            candidates = None
+            if cast:
+                cast_ids = set(cast_crew_service.find_tmdbids_by_cast(cast))
+                candidates = cast_ids if candidates is None else candidates & cast_ids
+            if crew:
+                crew_ids = set(cast_crew_service.find_tmdbids_by_crew(crew))
+                candidates = crew_ids if candidates is None else candidates & crew_ids
+            allowed_tmdbids = list(candidates) if candidates is not None else []
+            print(f"DEBUG: Allowed tmdbIDs after cast/crew filtering: {allowed_tmdbids}")
+            if not allowed_tmdbids:
+                return {"movies": [], "current_page": page_number, "total_pages": 0, "has_next": False, "has_prev": False}
         
         # Get total count of matching movies first
-        total_movies = self.movie_repo.count_search_results(search_term, genre, year_param, min_avg_rating)
-        
+        total_movies = self.movie_repo.count_search_results(search_term, genres_param, allowed_tmdbids, year_param, min_avg_rating)
+        print(f"DEBUG: Total matching movies: {total_movies}")
         # Calculate total pages
         total_pages = (total_movies + movies_per_page - 1) // movies_per_page
-        
+
         # Apply max pages constraint
         max_possible_page = min(max_pages, total_pages)
         if page_number > max_possible_page:
             page_number = max_possible_page
-        
+
         # Get paginated results
         movies = self.movie_repo.search_movies(
             search_term=search_term,
-            genre=genre,
+            genres=genres_param,
+            allowed_tmdbids=allowed_tmdbids,
             year=year_param,
             min_avg_rating=min_avg_rating,
             offset=(page_number - 1) * movies_per_page,
             limit=movies_per_page
         )
-        
+        print(f"DEBUG: Retrieved {len(movies)} movies for page {page_number}")
         return {
             "movies": movies,
             "current_page": page_number,

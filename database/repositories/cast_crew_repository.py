@@ -84,6 +84,46 @@ class CastCrewRepository:
             print(f"Unexpected error fetching director for movie {tmdb_id}: {e}")
             return None
         
+    def find_tmdbids_by_cast(self, cast_name):
+        """
+        Returns a list of tmdbID (movie IDs) for all movies with a cast member whose name matches (case-insensitive, partial OK).
+        """
+        cast_collection = self._get_cast_collection()
+        if cast_collection is None:
+            print("MongoDB connection not available for Cast collection.")
+            return []
+        try:
+            cursor = cast_collection.find({"name": {"$regex": cast_name, "$options": "i"}})
+            tmdbids = set()
+            for doc in cursor:
+                tmdbid = doc.get('tmdbID')
+                if tmdbid is not None:
+                    tmdbids.add(tmdbid)
+            return list(tmdbids)
+        except Exception as e:
+            print(f"Error finding cast by name: {e}")
+            return []
+
+    def find_tmdbids_by_crew(self, crew_name, job=None):
+        """
+        Returns a list of tmdbID (movie IDs) for all movies with a crew member whose name matches (case-insensitive, partial OK).
+        """
+        crew_collection = self._get_crew_collection()
+        if crew_collection is None:
+            print("MongoDB connection not available for Crew collection.")
+            return []
+        try:
+            cursor = crew_collection.find({"name": {"$regex": crew_name, "$options": "i"}})
+            tmdbids = set()
+            for doc in cursor:
+                tmdbid = doc.get('tmdbID')
+                if tmdbid is not None:
+                    tmdbids.add(tmdbid)
+            return list(tmdbids)
+        except Exception as e:
+            print(f"Error finding crew by name: {e}")
+            return []
+            
     def add_cast_member(self, tmdb_id, name, character):
         """Inserts a new cast member into MongoDB."""
         cast_collection = self._get_cast_collection()

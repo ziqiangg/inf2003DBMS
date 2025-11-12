@@ -48,6 +48,12 @@ class CastCrewService:
             "director": director
         }
 
+    def find_tmdbids_by_cast(self, cast_name):
+        return self.cast_crew_repo.find_tmdbids_by_cast(cast_name)
+
+    def find_tmdbids_by_crew(self, crew_name, job=None):
+        return self.cast_crew_repo.find_tmdbids_by_crew(crew_name)
+
     # Optional: Helper method to get a formatted list of actors and their roles
     def get_formatted_cast_list(self, tmdb_id):
         """Returns a list of strings like 'Name as Character' for the cast."""
