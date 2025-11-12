@@ -257,7 +257,7 @@ python main.py
 ![Schema Diagram](images/schema.png)
 
 ## Concurrent User Testing
-To conduct a concurrent user test, please run the concurrent_test.py and observe the results of the main features of the application.
+To conduct a concurrent user test, please run the `tests/concurrent_test.py` and observe the results of the main features of the application.
 
 Below is a table of the results.
 
