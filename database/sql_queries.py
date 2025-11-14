@@ -104,7 +104,7 @@ SELECT m.tmdbID, m.title, m.poster, m.overview, m.releaseDate, m.runtime, m.tota
 FROM Movies m
 JOIN Movie_Genre mg ON m.tmdbID = mg.tmdbID
 JOIN Genre g ON mg.genreID = g.genreID
-WHERE g.genreName IN ({placeholders})
+{where_section}
 GROUP BY m.tmdbID
 HAVING COUNT(DISTINCT g.genreName) = %s
 ORDER BY m.releaseDate DESC, m.tmdbID DESC

@@ -546,7 +546,7 @@ class MovieSearchPanel(QWidget):
         # Search with filters
         results = self.movie_service.search_movies_by_title(
             search_term=title,
-            genre=genre,
+            genres=genre,
             year=year
         )["movies"]  # Get the movies from the pagination result
 
