@@ -336,16 +336,17 @@ ORDER BY rev.timeStamp DESC;
 # Query to get both ratings and reviews for a specific user, unified for sorting on profile page
 GET_USER_RATINGS_AND_REVIEWS_UNIFIED = """
 (
-    -- Get all ratings for the user, including the movie title
+    -- Get all ratings for the user, including the movie title AND their review if exists
     SELECT
         r.tmdbID,
         m.title,
         r.rating,
-        NULL as review_text,
+        rev.review as review_text,
         NULL as rating_timeStamp,
-        NULL as review_timeStamp
+        rev.timeStamp as review_timeStamp
     FROM Ratings r
     JOIN Movies m ON r.tmdbID = m.tmdbID
+    LEFT JOIN Reviews rev ON r.tmdbID = rev.tmdbID AND r.userID = rev.userID
     WHERE r.userID = %s
 )
 UNION ALL

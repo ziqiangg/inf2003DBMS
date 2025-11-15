@@ -70,3 +70,19 @@ class ReviewService:
             "success": True,
             "reviews": reviews
         }
+
+    def admin_delete_review(self, tmdb_id, target_user_id):
+        """Admin-only: Deletes any user's review without ownership check.
+        
+        Args:
+            tmdb_id (int): The movie's tmdbID
+            target_user_id (int): The userID whose review to delete
+            
+        Returns:
+            dict: Result with success status
+        """
+        success = self.review_repo.delete_review(target_user_id, tmdb_id)
+        if not success:
+            return {"success": False, "message": "Failed to delete review or review does not exist."}
+        
+        return {"success": True, "message": "Review deleted successfully by admin."}

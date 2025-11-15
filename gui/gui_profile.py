@@ -475,6 +475,10 @@ class ProfileWindow(QWidget):
         print("DEBUG: ProfileWindow.load_profile_data: Clearing existing list.")
         self.rated_movies_list.clear()
 
+        # Check if admin is viewing another user
+        is_admin_viewing_other = (self.current_user_role == 'admin' and 
+                                   self.selected_user_id != self.current_user_id)
+
         print("DEBUG: ProfileWindow.load_profile_data: Starting to populate list widget with sorted data.")
         for i, interaction in enumerate(sorted_interactions):
             print(f"DEBUG: ProfileWindow.load_profile_data: Processing sorted interaction {i+1}: {interaction}")
@@ -483,28 +487,73 @@ class ProfileWindow(QWidget):
                 movie_title = interaction['title']
                 rating_value = interaction['rating']
                 review_text = interaction['review']
-                # The 'timeStamp' here should be correctly set by the service based on the interaction type
                 timestamp = interaction.get('timeStamp', 'N/A')
 
-                # Construct item text based on presence of rating and review
+                # Create list item widget with optional delete button
+                item_widget = QWidget()
+                item_layout = QHBoxLayout(item_widget)
+                item_layout.setContentsMargins(5, 2, 5, 2)
+
+                # Text label - build conditionally
+                text_parts = [movie_title]
+                
+                # Add rating if present
                 if rating_value is not None:
-                    item_text = f"{movie_title} - Rating: {rating_value}/5"
-                    # If there's also a review, add it on the next line
-                    if review_text:
-                        item_text += f"\nReview: {review_text}"
-                    # Optionally, show timestamp if rating has one (though it's None from the query)
-                    # item_text += f" (Time: {timestamp})" # This would show (Time: None) based on query
-                else:  # rating_value is None, must be review-only
-                    item_text = f"{movie_title} - Review (No Rating) (Time: {timestamp})"
-                    # Add the review text
-                    item_text += f"\nReview: {review_text if review_text else 'No Review Text'}"
+                    text_parts.append(f"Rating: {rating_value}/5")
+                
+                # Add review if present
+                if review_text:
+                    if rating_value is None:
+                        # Review only, show timestamp
+                        text_parts.append(f"Review (Time: {timestamp})")
+                    text_parts.append(f"Review: {review_text}")
+                
+                # Join all parts
+                item_text = " - ".join(text_parts) if len(text_parts) > 1 else text_parts[0]
+                # For multi-line display with review
+                if review_text:
+                    formatted_text = f"{movie_title}"
+                    if rating_value is not None:
+                        formatted_text += f" - Rating: {rating_value}/5"
+                    formatted_text += f"\nReview: {review_text}"
+                    if rating_value is None:
+                        formatted_text = f"{movie_title} - Review (No Rating) (Time: {timestamp})\nReview: {review_text}"
+                    item_text = formatted_text
 
-                print(f"DEBUG: ProfileWindow.load_profile_data: Item text for tmdbID {tmdb_id}: {item_text[:50]}...")
+                text_label = QLabel(item_text)
+                text_label.setWordWrap(True)
+                item_layout.addWidget(text_label, stretch=1)
 
-                item = QListWidgetItem(item_text)
-                item.setData(Qt.UserRole, tmdb_id)
+                # Add delete review button if admin viewing another user AND review exists
+                if is_admin_viewing_other and review_text:
+                    delete_btn = QPushButton("Delete Review")
+                    delete_btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: #dc3545;
+                            color: white;
+                            border: none;
+                            padding: 5px 10px;
+                            border-radius: 3px;
+                            font-size: 11px;
+                        }
+                        QPushButton:hover {
+                            background-color: #c82333;
+                        }
+                    """)
+                    delete_btn.setFixedWidth(100)
+                    delete_btn.clicked.connect(
+                        lambda checked, tid=tmdb_id, uid=self.selected_user_id: 
+                        self.admin_delete_review(tid, uid)
+                    )
+                    item_layout.addWidget(delete_btn)
 
-                self.rated_movies_list.addItem(item)
+                # Create list item and set widget
+                list_item = QListWidgetItem(self.rated_movies_list)
+                list_item.setSizeHint(item_widget.sizeHint())
+                list_item.setData(Qt.UserRole, tmdb_id)
+                self.rated_movies_list.addItem(list_item)
+                self.rated_movies_list.setItemWidget(list_item, item_widget)
+
                 print(f"DEBUG: ProfileWindow.load_profile_data: Added item for tmdbID {tmdb_id} to list.")
 
             except KeyError as e:
@@ -517,6 +566,49 @@ class ProfileWindow(QWidget):
                 continue
 
         print("DEBUG: ProfileWindow.load_profile_data: Finished populating list widget with sorted data.")
+
+    def admin_delete_review(self, tmdb_id, target_user_id):
+        """Admin function to delete another user's review.
+        
+        Args:
+            tmdb_id (int): The movie's tmdbID
+            target_user_id (int): The userID whose review to delete
+        """
+        # Verify admin permissions
+        if self.current_user_role != 'admin':
+            QMessageBox.warning(self, "Permission Denied", "Only admins can delete reviews.")
+            return
+        
+        # Prevent deleting own reviews through this method
+        if target_user_id == self.current_user_id:
+            QMessageBox.warning(self, "Invalid Operation", 
+                              "Use the movie detail page to delete your own reviews.")
+            return
+        
+        # Confirm deletion
+        reply = QMessageBox.question(
+            self, 'Delete Review',
+            f"Are you sure you want to delete this review?\n\n"
+            f"User ID: {target_user_id}\n"
+            f"Movie ID: {tmdb_id}\n\n"
+            "This action cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            from database.services.review_service import ReviewService
+            review_service = ReviewService()
+            
+            result = review_service.admin_delete_review(tmdb_id, target_user_id)
+            
+            if result['success']:
+                QMessageBox.information(self, "Success", "Review deleted successfully.")
+                # Reload the profile data to reflect changes
+                self.load_profile_data()
+                # Emit signal to update other windows if needed
+                global_signals.movie_data_updated.emit(tmdb_id)
+            else:
+                QMessageBox.critical(self, "Error", f"Failed to delete review: {result['message']}")
 
     def open_movie_detail_from_list(self, item):
         """Opens the MovieDetailWindow for the movie associated with the clicked list item."""
