@@ -26,7 +26,7 @@ class MySQLConnectionManager:
                 pool_name=pool_name,
                 pool_size=pool_size,
                 pool_reset_session=True,
-                host='100.124.52.6',
+                host='115.66.101.228',
                 database='INF2003_DBS_P1_20',
                 user='p1_20_db_user',
                 password='p1_20',
